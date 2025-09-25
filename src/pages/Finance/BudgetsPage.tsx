@@ -10,7 +10,6 @@ import {
   serverTimestamp,
 } from "firebase/firestore";
 import { getAuth } from "firebase/auth";
-import { sendEmail } from "../../../api/email";
 
 type BudgetKind = "shoot" | "event" | "office" | "others";
 
@@ -189,20 +188,27 @@ export default function BudgetsPage() {
     });
 
 // ✅ Notify approvers
-  await sendEmail(
-    [
+await fetch("/api/sendEmail", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({
+    to: [
       "jelynsonbattung@gmail.com",       // admin_final
       "hrfinance.instapost@gmail.com",   // finance
       "auquilang.instapost@gmail.com",   // exec
       "yana.instapost@gmail.com",        // exec
     ],
-    "📑 New Budget Request Filed",
-    `<p>A new budget request has been filed by <b>${requesterName}</b>.</p>
-     <p><b>Title:</b> ${title}<br/>
-        <b>Amount:</b> ₱${Number(amount).toLocaleString()}<br/>
-        <b>Needed:</b> ${dateNeeded}</p>
-     <p><a href="https://yourapp.com/approvals">Review in Approvals</a></p>`
-  );
+    subject: "📑 New Budget Request Filed",
+    html: `
+      <p>A new budget request has been filed by <b>${requesterName}</b>.</p>
+      <p><b>Title:</b> ${title}<br/>
+         <b>Amount:</b> ₱${Number(amount).toLocaleString()}<br/>
+         <b>Needed:</b> ${dateNeeded}</p>
+      <p><a href="https://yourapp.com/approvals">Review in Approvals</a></p>
+    `,
+  }),
+});
+
 
     // reset + switch
     setKind("shoot");

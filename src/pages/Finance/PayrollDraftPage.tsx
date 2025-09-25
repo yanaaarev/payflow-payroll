@@ -19,7 +19,6 @@ import {
 import { getAuth } from "firebase/auth";
 import { useParams, useNavigate } from "react-router-dom";
 import { calculatePayroll } from "../../utils/payrollLogic";
-import { sendEmail } from "../../../api/email";
 
 /* ========================================================================
    TYPES
@@ -702,13 +701,17 @@ useEffect(() => {
     updatedAt: serverTimestamp(),
   });
 
-  // ✅ Notify execs
-  await sendEmail(
-    ["auquilang.instapost@gmail.com", "yana.instapost@gmail.com"],
-    "🔔 Payroll Draft Needs Review",
-    `<p>A payroll draft (${draftId}) is awaiting executive review.</p>
-     <p><a href="https://yourapp.com/finance/payroll/drafts/${draftId}">View Draft</a></p>`
-  );
+  // ✅ Call API route instead of direct nodemailer
+  await fetch("/api/sendEmail", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      to: ["auquilang.instapost@gmail.com", "yana.instapost@gmail.com"],
+      subject: "🔔 Payroll Draft Needs Review",
+      html: `<p>A payroll draft (${draftId}) is awaiting executive review.</p>
+             <p><a href="https://yourapp.vercel.app/finance/payroll/drafts/${draftId}">View Draft</a></p>`,
+    }),
+  });
 }
   
   async function execApprove() {
@@ -738,13 +741,18 @@ useEffect(() => {
 
     // ✅ If final exec approval reached, notify admin_final
     if (newStatus === "pending_admin") {
-      await sendEmail(
-        ["jelynsonbattung@gmail.com"],
-        "🔔 Payroll Draft Ready for Final Approval",
-        `<p>The payroll draft (${draftId}) has been approved by execs and is awaiting final admin approval.</p>
-         <p><a href="https://yourapp.com/finance/payroll/drafts/${draftId}">Review Draft</a></p>`
-      );
-    }
+      // ✅ Call API route instead of direct nodemailer
+  await fetch("/api/sendEmail", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      to: ["jelynsonbattung@gmail.com"],
+      subject: "🔔 Payroll Draft Ready for Final Approval",
+      html: `<p>The payroll draft (${draftId}) has been approved by execs and is awaiting final admin approval.</p>
+         <p><a href="https://yourapp.com/finance/payroll/drafts/${draftId}">Review Draft</a></p>`,
+    }),
+  });
+}
   });
 }
 
@@ -851,16 +859,25 @@ useEffect(() => {
       ].filter((d) => d.amount && d.amount !== 0);
 
       // ✅ Notify employee
-      if (employeeEmail) {
-        await sendEmail(
-          employeeEmail,
-          "💰 Your Payslip is Ready",
-          `<p>Hello ${employeeName},</p>
-           <p>Your payslip for <b>${head.cutoffLabel}</b> is now available.</p>
-           <p>Gross: ${peso(out.grossEarnings + comm)}<br/>
-              Net: ${peso(out.netPay + comm)}</p>`
-        );
-      }
+if (employeeEmail) {
+  await fetch("/api/sendEmail", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      to: employeeEmail,
+      subject: "💰 Your Payslip is Ready",
+      html: `
+        <p>Hello ${employeeName},</p>
+        <p>Your payslip for <b>${head.cutoffLabel}</b> is now available.</p>
+        <p>
+          Gross: ${peso(out.grossEarnings + comm)}<br/>
+          Net: ${peso(out.netPay + comm)}
+        </p>
+      `,
+    }),
+  });
+}
+
 
       // ✅ save payslip
       await addDoc(slipsCol, {
@@ -919,11 +936,16 @@ useEffect(() => {
     });
 
     // ✅ Notify finance/admin/exec depending on role
-  await sendEmail(
-    ["hrfinance.instapost@gmail.com"],
-    "❌ Payroll Draft Rejected",
-    `<p>The payroll draft (${draftId}) was rejected by ${role}.</p>`
-  );
+  // ✅ Call API route instead of direct nodemailer
+  await fetch("/api/sendEmail", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      to: ["hrfinance.instapost@gmail.com"],
+      subject: "❌ Payroll Draft Rejected",
+      html: `<p>The payroll draft (${draftId}) was rejected by ${role}.</p>`,
+    }),
+  });
 }
 
   async function saveDayEdit(lineId: string, index: number) {

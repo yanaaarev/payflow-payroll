@@ -12,7 +12,6 @@ import {
   getDoc,
 } from "firebase/firestore";
 import { getAuth } from "firebase/auth";
-import { sendEmail } from "../../../api/email";
 
 // ───────────────────────── Types ─────────────────────────
 type ReqType = "ob" | "ot" | "sl" | "bl" | "vl" | "remotework" | "wfh" | "rdot";
@@ -388,19 +387,25 @@ export default function RequestsPage() {
     });
 
 // ✅ Notify approvers
-  await sendEmail(
-    [
+await fetch("/api/sendEmail", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({
+    to: [
       "jelynsonbattung@gmail.com",       // admin_final
       "hrfinance.instapost@gmail.com",   // finance
       "auquilang.instapost@gmail.com",   // exec
       "yana.instapost@gmail.com",        // exec
     ],
-    "📑 New Request Filed",
-    `<p>A new <b>${type.toUpperCase()}</b> request has been filed by <b>${meEmp.name}</b>.</p>
-     <p><b>Date:</b> ${date}<br/>
-        <b>Reason:</b> ${reason || "—"}</p>
-     <p><a href="https://yourapp.com/approvals">Review in Approvals</a></p>`
-  );
+    subject: "📑 New Request Filed",
+    html: `
+      <p>A new <b>${type.toUpperCase()}</b> request has been filed by <b>${meEmp.name}</b>.</p>
+      <p><b>Date:</b> ${date}<br/>
+         <b>Reason:</b> ${reason || "—"}</p>
+      <p><a href="https://yourapp.com/approvals">Review in Approvals</a></p>
+    `,
+  }),
+});
 
     // reset + switch
     setDate("");

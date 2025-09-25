@@ -4,7 +4,7 @@ import { db } from "../../firebase/firebase";
 import { collection, getDocs, query, where, updateDoc, doc } from "firebase/firestore";
 import { getAuth } from "firebase/auth";
 import { useNavigate } from "react-router-dom";
-import { sendEmail } from "../../../api/email";
+import { sendEmail } from "../../../api/sendEmail";
 
 /* ========================= Types ========================= */
 type ReqType =
