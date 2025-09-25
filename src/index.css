@@ -1,0 +1,30 @@
+@import "tailwindcss";
+
+
+/* === Body & HTML === */
+html, body {
+  width: 100%;
+  min-height: 100vh;
+  overflow-x: hidden; /* ✅ allow navbar background to extend full width */
+}
+
+/* === Animations (Keep) === */
+@keyframes bounce {
+  0%, 100% { transform: translateY(-25%); animation-timing-function: cubic-bezier(0.8, 0, 1, 1); }
+  50% { transform: translateY(0); animation-timing-function: cubic-bezier(0, 0, 0.2, 1); }
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+@keyframes pulse { 50% { opacity: 0.5; } }
+@keyframes ping { 75%, 100% { transform: scale(2); opacity: 0; } }
+
+.animate-bounce { animation: bounce 1s infinite; }
+.animate-spin { animation: spin 1s linear infinite; }
+.animate-pulse { animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
+.animate-ping { animation: ping 1s cubic-bezier(0, 0, 0.2, 1) infinite; }
+
+/* === Light Mode (Optional) === */
+@media (prefers-color-scheme: light) {
+  body {
+    color: #213547;
+  }
+}
