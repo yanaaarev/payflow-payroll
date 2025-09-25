@@ -8,7 +8,10 @@ pnpm-debug.log*
 lerna-debug.log*
 
 .env
-./payflow-payroll-cb0f0-firebase-adminsdk-fbsvc-100bf60055.json
+payflow-payroll-cb0f0-firebase-adminsdk-fbsvc-100bf60055.json
+/src/firebase/
+/src/firebase/firebase.ts
+functions/
 node_modules
 dist
 dist-ssr
