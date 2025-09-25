@@ -1,0 +1,97 @@
+{
+    "routes":[
+        {
+            "src": "/",
+            "dest": "/"
+        },
+        {
+            "src": "/employee-dashboard",
+            "dest": "/"
+        },
+        {
+            "src": "/employee/payslips",
+            "dest": "/"
+        },
+        {
+            "src": "/approvals/view-budget/(?<id>[^/]+)",
+            "dest": "/"
+        },
+        {
+            "src": "/approvals/view-request/(?<id>[^/]+)",
+            "dest": "/"
+        },
+        {
+            "src": "/admin",
+            "dest": "/"
+        },
+        {
+            "src": "/finance",
+            "dest": "/"
+        },
+        {
+            "src": "/executive",
+            "dest": "/"
+        },
+        {
+            "src": "/finance/employees",
+            "dest": "/"
+        },
+        {
+            "src": "/finance/employees/add",
+            "dest": "/"
+        },
+        {
+            "src": "/finance/employees/(?<id>[^/]+)",
+            "dest": "/"
+        },
+        {
+            "src": "/finance/employees/(?<id>[^/]+)/edit",
+            "dest": "/"
+        },
+        {
+            "src": "/finance/payroll",
+            "dest": "/"
+        },
+        {
+            "src": "/finance/payroll/drafts/(?<draftId>[^/]+)",
+            "dest": "/"
+        },
+        {
+            "src": "/finance/attendance",
+            "dest": "/"
+        },
+        {
+            "src": "/finance/cash-advances",
+            "dest": "/"
+        },
+        {
+            "src": "/finance/budgets",
+            "dest": "/"
+        },
+        {
+            "src": "/finance/reports",
+            "dest": "/"
+        },
+        {
+            "src": "/finance/audit-logs",
+            "dest": "/"
+        },
+        {
+            "src": "/approvals",
+            "dest": "/"
+        },
+        {
+            "src": "/finance/settings",
+            "dest": "/"
+        },
+        {
+            "src": "/notifications",
+            "dest": "/"
+        },
+        {
+            "src": "/profile",
+            "dest": "/"
+        }
+        
+    ]
+}
