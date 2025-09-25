@@ -4,7 +4,6 @@ import { db } from "../../firebase/firebase";
 import { collection, getDocs, query, where, updateDoc, doc } from "firebase/firestore";
 import { getAuth } from "firebase/auth";
 import { useNavigate } from "react-router-dom";
-import { sendEmail } from "../../../api/sendEmail";
 
 /* ========================= Types ========================= */
 type ReqType =
@@ -143,11 +142,15 @@ async function approveBudget(id: string) {
   // 🔔 notify requester
   const b = budgets.find((x) => x.id === id);
   if (b?.requesterEmail) {
-    await sendEmail(
-      b.requesterEmail,
-      "Budget Approved",
-      `<p>Hi ${b.requesterName}, your budget "<b>${b.title}</b>" has been approved.</p>`
-    );
+    await fetch("/api/sendEmail", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        to: b.requesterEmail,
+        subject: "✅ Budget Approved",
+        html: `<p>Hi ${b.requesterName}, your budget "<b>${b.title}</b>" has been approved.</p>`,
+      }),
+    });
   }
 }
 
@@ -157,11 +160,15 @@ async function rejectBudget(id: string) {
   // 🔔 notify requester
   const b = budgets.find((x) => x.id === id);
   if (b?.requesterEmail) {
-    await sendEmail(
-      b.requesterEmail,
-      "Budget Rejected",
-      `<p>Hi ${b.requesterName}, your budget "<b>${b.title}</b>" has been rejected.</p>`
-    );
+    await fetch("/api/sendEmail", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        to: b.requesterEmail,
+        subject: "❌ Budget Rejected",
+        html: `<p>Hi ${b.requesterName}, your budget "<b>${b.title}</b>" has been rejected.</p>`,
+      }),
+    });
   }
 }
 
@@ -171,11 +178,15 @@ async function approveRequest(id: string) {
   // 🔔 notify requester
   const r = requests.find((x) => x.id === id);
   if (r?.filedBy) {
-    await sendEmail(
-      r.filedBy,
-      "Request Approved",
-      `<p>Hi ${r.employeeName}, your request (<b>${r.type}</b>) has been approved.</p>`
-    );
+    await fetch("/api/sendEmail", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        to: r.filedBy,
+        subject: "✅ Request Approved",
+        html: `<p>Hi ${r.employeeName}, your request (<b>${r.type}</b>) has been approved.</p>`,
+      }),
+    });
   }
 }
 
@@ -185,14 +196,17 @@ async function rejectRequest(id: string) {
   // 🔔 notify requester
   const r = requests.find((x) => x.id === id);
   if (r?.filedBy) {
-    await sendEmail(
-      r.filedBy,
-      "Request Rejected",
-      `<p>Hi ${r.employeeName}, your request (<b>${r.type}</b>) has been rejected.</p>`
-    );
+    await fetch("/api/sendEmail", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        to: r.filedBy,
+        subject: "❌ Request Rejected",
+        html: `<p>Hi ${r.employeeName}, your request (<b>${r.type}</b>) has been rejected.</p>`,
+      }),
+    });
   }
 }
-
 
   /* ---------- UI ---------- */
   return (
