@@ -10,6 +10,7 @@ import {
   serverTimestamp,
   doc,
   getDoc,
+  where,
 } from "firebase/firestore";
 import { getAuth } from "firebase/auth";
 
@@ -203,47 +204,48 @@ export default function RequestsPage() {
     [roles]
   );
 
-  // If the user cannot view the list, default to "file"
-  useEffect(() => {
-    if (!rolesLoading && !canViewAll) setTab("file");
-  }, [rolesLoading, canViewAll]);
-
-  // ── load my employee via email
-  useEffect(() => {
-    (async () => {
-      setLoadingMe(true);
-      try {
-        const email = auth.currentUser?.email || "";
-        if (!email) {
-          setMeEmp(null);
-          return;
-        }
-        const snap = await getDocs(collection(db, "employees"));
-        let found: MyEmployee | null = null;
-        snap.forEach((d) => {
-          const x = d.data() as any;
-          if ((x.email || "").toLowerCase() === email.toLowerCase()) {
-            found = {
-              id: d.id,
-              employeeId: x.employeeId || "",
-              name: x.name || "",
-              email: x.email || "",
-              type: (x.type as EmpType) || "core",
-              obRates: Array.isArray(x.obRates)
-                ? x.obRates.map((r: any) => ({
-                    category: String(r?.category || r?.role || r?.title || ""),
-                    rate: Number(r?.rate ?? r?.amount ?? 0),
-                  }))
-                : [],
-            };
-          }
-        });
-        setMeEmp(found);
-      } finally {
-        setLoadingMe(false);
+// ── load my employee via email
+useEffect(() => {
+  (async () => {
+    setLoadingMe(true);
+    try {
+      const email = auth.currentUser?.email?.toLowerCase() || "";
+      if (!email) {
+        setMeEmp(null);
+        return;
       }
-    })();
-  }, [auth]);
+
+      const q = query(
+        collection(db, "employees"),
+        where("email", "==", email)
+      );
+      const snap = await getDocs(q);
+
+      if (!snap.empty) {
+        const d = snap.docs[0];
+        const x = d.data() as any;
+        setMeEmp({
+          id: d.id,
+          employeeId: x.employeeId || "",
+          name: x.name || "",
+          email: (x.email || "").toLowerCase(),
+          type: (x.type as EmpType) || "core",
+          obRates: Array.isArray(x.obRates)
+            ? x.obRates.map((r: any) => ({
+                category: String(r?.category || r?.role || r?.title || ""),
+                rate: Number(r?.rate ?? r?.amount ?? 0),
+              }))
+            : [],
+        });
+      } else {
+        setMeEmp(null);
+      }
+    } finally {
+      setLoadingMe(false);
+    }
+  })();
+}, [auth]);
+
 
   // ── load requests (ONLY if user can view all)
   useEffect(() => {
