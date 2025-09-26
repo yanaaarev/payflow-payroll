@@ -408,6 +408,7 @@ await fetch("/api/sendEmail", {
          ${type === "ob" ? `<b>Category:</b> ${OB_LABEL[obCategoryKey]}<br/>` : ""}
          ${type === "ot" ? `<b>OT Hours:</b> ${otHours}<br/>` : ""}
          ${(type === "remotework" || type === "wfh" || type === "rdot") ? `<b>Hours:</b> ${workedHours}<br/>` : ""}
+         <b>Location:</b> ${location || "—"}</p>
          <b>Proof:</b> ${proofUrl || "—"}</p>
          <b>Reason:</b> ${reason || "—"}</p>
       <p><a href="https://payflow-payroll.vercel.app/approvals">Review in Approvals</a></p>

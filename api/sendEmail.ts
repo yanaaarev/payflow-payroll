@@ -18,7 +18,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     });
 
     await transporter.sendMail({
-      from: process.env.GMAIL_USER,
+      from: `"InstaPayFlow HR" <${process.env.GMAIL_USER}>`,
       to,
       subject,
       text: text || "",   // fallback in case html not provided
