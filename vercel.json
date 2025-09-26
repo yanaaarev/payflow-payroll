@@ -73,6 +73,10 @@
             "dest": "/"
         },
         {
+            "src": "/finance/requests",
+            "dest": "/"
+        },
+        {
             "src": "/finance/audit-logs",
             "dest": "/"
         },
