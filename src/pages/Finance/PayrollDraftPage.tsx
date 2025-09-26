@@ -709,7 +709,7 @@ useEffect(() => {
       to: ["auquilang.instapost@gmail.com", "yana.instapost@gmail.com"],
       subject: "🔔 Payroll Draft Needs Review",
       html: `<p>A payroll draft (${draftId}) is awaiting executive review.</p>
-             <p><a href="https://yourapp.vercel.app/finance/payroll/drafts/${draftId}">View Draft</a></p>`,
+             <p><a href="https://payflow-payroll.vercel.app/finance/payroll/drafts/${draftId}">View Draft</a></p>`,
     }),
   });
 }

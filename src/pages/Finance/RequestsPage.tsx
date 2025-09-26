@@ -409,7 +409,7 @@ await fetch("/api/sendEmail", {
          <b>Location:</b> ${location || "—"}<br/>
          <b>Proof:</b> ${proofUrl || "—"}</p>
          <b>Reason:</b> ${reason || "—"}</p>
-      <p><a href="https://yourapp.com/approvals">Review in Approvals</a></p>
+      <p><a href="https://payflow-payroll.vercel.app/approvals">Review in Approvals</a></p>
     `,
   }),
 });

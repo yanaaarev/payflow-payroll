@@ -205,7 +205,7 @@ await fetch("/api/sendEmail", {
          <b>Amount:</b> ₱${Number(amount).toLocaleString()}<br/>
          <b>Type:</b> ${kind.toUpperCase()}<br/>
          <b>Needed:</b> ${dateNeeded}</p>
-      <p><a href="https://yourapp.com/approvals">Review in Approvals</a></p>
+      <p><a href="https://payflow-payroll.vercel.app/approvals">Review in Approvals</a></p>
     `,
   }),
 });

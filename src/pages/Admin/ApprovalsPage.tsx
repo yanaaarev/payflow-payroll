@@ -267,22 +267,30 @@ async function rejectRequest(id: string) {
               title={r.employeeName}
               status={r.status}
               right={
-                canApproveRequest && (
-                  <div className="flex gap-2">
-                    <button
-                      onClick={() => approveRequest(r.id)}
-                      className="px-3 py-1 text-xs rounded bg-green-600 hover:bg-green-500"
-                    >
-                      Approve
-                    </button>
-                    <button
-                      onClick={() => rejectRequest(r.id)}
-                      className="px-3 py-1 text-xs rounded bg-red-600 hover:bg-red-500"
-                    >
-                      Reject
-                    </button>
-                  </div>
-                )
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => navigate(`/approvals/view-request/${r.id}`)}
+                    className="px-3 py-1 text-xs rounded bg-blue-600 hover:bg-blue-500"
+                  >
+                    View
+                  </button>
+                  {canApproveRequest && (
+                    <>
+                      <button
+                        onClick={() => approveRequest(r.id)}
+                        className="px-3 py-1 text-xs rounded bg-green-600 hover:bg-green-500"
+                      >
+                        Approve
+                      </button>
+                      <button
+                        onClick={() => rejectRequest(r.id)}
+                        className="px-3 py-1 text-xs rounded bg-red-600 hover:bg-red-500"
+                      >
+                        Reject
+                      </button>
+                    </>
+                  )}
+                </div>
               }
             />
               ))}
@@ -307,27 +315,35 @@ async function rejectRequest(id: string) {
                 {date}
               </div>
               {items.map((b) => (
-                <DetailsView
+               <DetailsView
               key={b.id}
               title={b.title}
               status={b.status}
               right={
-                canApproveBudget && (
-                  <div className="flex gap-2">
-                    <button
-                      onClick={() => approveBudget(b.id)}
-                      className="px-3 py-1 text-xs rounded bg-green-600 hover:bg-green-500"
-                    >
-                      Approve
-                    </button>
-                    <button
-                      onClick={() => rejectBudget(b.id)}
-                      className="px-3 py-1 text-xs rounded bg-red-600 hover:bg-red-500"
-                    >
-                      Reject
-                    </button>
-                  </div>
-                )
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => navigate(`/approvals/view-budget/${b.id}`)}
+                    className="px-3 py-1 text-xs rounded bg-blue-600 hover:bg-blue-500"
+                  >
+                    View
+                  </button>
+                  {canApproveBudget && (
+                    <>
+                      <button
+                        onClick={() => approveBudget(b.id)}
+                        className="px-3 py-1 text-xs rounded bg-green-600 hover:bg-green-500"
+                      >
+                        Approve
+                      </button>
+                      <button
+                        onClick={() => rejectBudget(b.id)}
+                        className="px-3 py-1 text-xs rounded bg-red-600 hover:bg-red-500"
+                      >
+                        Reject
+                      </button>
+                    </>
+                  )}
+                </div>
               }
             />
               ))}
