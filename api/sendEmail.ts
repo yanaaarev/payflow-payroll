@@ -6,37 +6,28 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(405).json({ error: "Method not allowed" });
   }
 
+  const { to, subject, text, html } = req.body; // 👈 also accept html
+
   try {
-    const { to, subject, text, html } = req.body;
-
-    if (!to || !subject || (!text && !html)) {
-      return res.status(400).json({ error: "Missing required fields: to, subject, text/html" });
-    }
-
-    // ✅ normalize "to" (can be string or array)
-    const recipients = Array.isArray(to) ? to.join(",") : String(to);
-
     const transporter = nodemailer.createTransport({
       service: "gmail",
       auth: {
         user: process.env.GMAIL_USER,
-        pass: process.env.GMAIL_PASS, // must be an App Password
+        pass: process.env.GMAIL_PASS, // App password, not normal Gmail password
       },
     });
 
-    const info = await transporter.sendMail({
-      from: `"Payflow System" <${process.env.GMAIL_USER}>`, // ✅ show name + email
-      to: recipients,
+    await transporter.sendMail({
+      from: process.env.GMAIL_USER,
+      to,
       subject,
-      text: text || "", // fallback if html not provided
-      html: html || text, // prefer html
+      text: text || "",   // fallback in case html not provided
+      html: html || text, // 👈 use html when provided
     });
 
-    console.log("Email sent:", info.messageId);
-
-    return res.status(200).json({ success: true, messageId: info.messageId });
-  } catch (err: any) {
-    console.error("Email send error:", err.message, err);
-    return res.status(500).json({ error: err.message || "Failed to send email" });
+    res.status(200).json({ success: true });
+  } catch (err) {
+    console.error("Email send error:", err);
+    res.status(500).json({ error: "Failed to send email" });
   }
 }
