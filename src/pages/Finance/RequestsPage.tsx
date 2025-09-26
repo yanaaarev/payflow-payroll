@@ -404,6 +404,11 @@ await fetch("/api/sendEmail", {
       <p>A new <b>${type.toUpperCase()}</b> request has been filed by <b>${meEmp.name}</b>.</p>
       <p><b>Date:</b> ${date}<br/>
          <b>Type:</b> ${type.toUpperCase()}<br/>
+         ${type === "ob" ? `<b>Title:</b> ${obTitle}<br/>` : ""}
+         ${type === "ob" ? `<b>Category:</b> ${OB_LABEL[obCategoryKey]}<br/>` : ""}
+         ${type === "ot" ? `<b>OT Hours:</b> ${otHours}<br/>` : ""}
+         ${(type === "remotework" || type === "wfh" || type === "rdot") ? `<b>Hours:</b> ${workedHours}<br/>` : ""}
+         <b>Proof:</b> ${proofUrl || "—"}</p>
          <b>Reason:</b> ${reason || "—"}</p>
       <p><a href="https://payflow-payroll.vercel.app/approvals">Review in Approvals</a></p>
     `,
