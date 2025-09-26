@@ -373,7 +373,7 @@ const AddEmployeePage = () => {
 
   /* ───────────────── UI ───────────────── */
   return (
-    <div className="min-h-screen bg-gray-900 text-white pt-20 px-4 sm:px-6 lg:px-8 pb-8">
+    <div className="min-h-screen bg-gray-900 text-white rounded-2xl pt-20 px-4 sm:px-6 lg:px-8 pb-8">
       <div className="max-w-4xl mx-auto bg-gray-800/50 rounded-2xl border border-white/10 shadow-xl p-8">
         <h1 className="text-2xl font-bold mb-6 text-center bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">
           Add New Employee

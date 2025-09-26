@@ -225,46 +225,67 @@ const AttendancePage = () => {
   }
 
   // ───────── NEW: role-aware clipping + hour computation ─────────
-  function clipToShiftByRole(name: string, timeIn: Date | null, timeOut: Date | null, fixedOut?: string) {
+  function clipToShiftByRole(
+  name: string,
+  timeIn: Date | null,
+  timeOut: Date | null,
+  fixedOut?: string
+) {
   if (!timeIn || !timeOut) return { start: null, end: null };
 
+  // Always start at 7:00 AM, even if punch earlier
   const shiftStart = sameDay(timeIn, 7, 0);
 
-  let shiftEnd = sameDay(timeIn, 17, 30); // default
+  let shiftEnd: Date;
   if (fixedOut) {
     const [hh, mm] = fixedOut.split(":").map(Number);
     shiftEnd = sameDay(timeIn, hh, mm);
   } else if (isIntern(name)) {
-    shiftEnd = sameDay(timeIn, 16, 0); // fallback for interns
+    shiftEnd = sameDay(timeIn, 16, 0); // interns default 7–4
+  } else {
+    shiftEnd = sameDay(timeIn, 17, 30); // core default 7–5:30
   }
 
-  const start = timeIn > shiftStart ? timeIn : shiftStart;
-  const end = timeOut < shiftEnd ? timeOut : shiftEnd;
+  // Clamp IN not earlier than 7:00
+  const start = timeIn < shiftStart ? shiftStart : timeIn;
+  // Clamp OUT not later than shiftEnd (OT must be filed separately)
+  const end = timeOut > shiftEnd ? shiftEnd : timeOut;
+
   if (end <= start) return { start: null, end: null };
   return { start, end };
 }
+
 
 
   // Effective hours within shift:
   // - Deduct ONLY lunch 12:00–13:00 overlap
   // - Morning 8:45–9:00 and afternoon 15:00–15:15 are paid (no deduction)
   // - Cap at 8 hours (OT not counted)
-  function computeHoursWorked(name: string, timeIn: Date | null, timeOut: Date | null): number {
-    const { start, end } = clipToShiftByRole(name, timeIn, timeOut);
-    if (!start || !end) return 0;
+  function computeHoursWorked(
+  name: string,
+  timeIn: Date | null,
+  timeOut: Date | null,
+  fixedOut?: string
+): number {
+  const { start, end } = clipToShiftByRole(name, timeIn, timeOut, fixedOut);
+  if (!start || !end) return 0;
 
-    let minutes = Math.max(0, Math.floor((end.getTime() - start.getTime()) / 60000));
+  let minutes = Math.max(0, Math.floor((end.getTime() - start.getTime()) / 60000));
 
-    // Deduct lunch overlap on that same day
-    const lunchStart = sameDay(start, 12, 0);
-    const lunchEnd   = sameDay(start, 13, 0);
-    minutes -= minutesOverlap(start, end, lunchStart, lunchEnd);
+  // Deduct lunch (12–1 PM) if span covers it
+  const lunchStart = sameDay(start, 12, 0);
+  const lunchEnd = sameDay(start, 13, 0);
+  minutes -= minutesOverlap(start, end, lunchStart, lunchEnd);
 
-    // Cap at 8 hours
-    minutes = Math.min(minutes, 8 * 60);
+  // Deduct morning + afternoon breaks (total 30 mins)
+  minutes = Math.max(0, minutes - 30);
 
-    return parseFloat((minutes / 60).toFixed(3));
-  }
+  // Cap at 480 minutes (8 hours)
+  minutes = Math.min(minutes, 480);
+
+  return parseFloat((minutes / 60).toFixed(3));
+}
+
 
     // ───────── NEW: compute tardiness (no grace period) ─────────
   function computeTardinessMinutes(timeIn: Date | null): number {
@@ -470,43 +491,57 @@ const AttendancePage = () => {
       }
     }
 
-    const IN_START = 6 * 60;
-    const IN_END = 13 * 60 + 59;
-    const OUT_START = 16 * 60;
+    // Allow IN punches from 6:00 AM onwards
+const IN_START = 6 * 60;
 
-    const isInWindow = (d: Date) => {
-      const m = d.getHours() * 60 + d.getMinutes();
-      return m >= IN_START && m <= IN_END;
-    };
-    const isOutWindow = (d: Date) => {
-      const m = d.getHours() * 60 + d.getMinutes();
-      return m >= OUT_START;
-    };
+// Allow OUT punches from 7:00 AM onwards
+const OUT_START = 7 * 60;
+
+const isInWindow = (d: Date) => {
+  const m = d.getHours() * 60 + d.getMinutes();
+  return m >= IN_START;
+};
+
+const isOutWindow = (d: Date) => {
+  const m = d.getHours() * 60 + d.getMinutes();
+  return m >= OUT_START;
+};
+
 
     const records: AttendanceRecord[] = [];
     for (const acc of grouped.values()) {
       const times = acc.times.sort((a, b) => a.getTime() - b.getTime());
-      const inCandidates = times.filter(isInWindow);
-      const outCandidates = times.filter(isOutWindow);
 
-      const timeIn = inCandidates.length ? inCandidates[0] : null;
-      const timeOut = outCandidates.length ? outCandidates[outCandidates.length - 1] : null;
+      // IN = first punch of the day within IN window
+      const timeIn = times.find(isInWindow) || null;
+
+      // OUT = last punch of the day that is after the IN
+      let timeOut: Date | null = null;
+      if (timeIn) {
+        timeOut = times.filter((t) => t > timeIn && isOutWindow(t)).pop() || null;
+      }
+
 
       let hoursWorked = computeHoursWorked(acc.name, timeIn, timeOut);
 
-      // Half-day rule for single punch
+      // Half-day: if IN is >= 12:00 noon, count 0.5 day only
+      if (timeIn) {
+        if (timeIn.getHours() >= 12) {
+          hoursWorked = 4.0;
+        }
+      }
+      // Fallback single punch → 4 hrs
       if ((timeIn && !timeOut) || (!timeIn && timeOut)) {
         hoursWorked = 4.0;
       }
 
       // --- Compute days ---
-      let daysWorked = hoursWorked / 8;
+    // --- Compute days (allow decimals) ---
+let daysWorked = hoursWorked / 8;
 
-      // Snap to 0 / 0.5 / 1 / 1.5 ...
-      if (daysWorked >= 0.75 && daysWorked < 1.25) daysWorked = 1;
-      else if (daysWorked >= 0.25 && daysWorked < 0.75) daysWorked = 0.5;
-      else if (daysWorked < 0.25) daysWorked = 0;
-      else daysWorked = Math.round(daysWorked * 2) / 2;
+// Round to 3 decimals (e.g. 0.625 days for 5 hrs)
+daysWorked = Math.round(daysWorked * 1000) / 1000;
+
 
       // --- INTERN RULE ---
       if (isIntern(acc.name) && timeOut) {
@@ -720,9 +755,10 @@ const AttendancePage = () => {
         employeeId: emp.id,
         canonicalName: emp.name || emp.fullName || displayName,
         email: emp.email || null,
+        fixedOut: emp.fixedOut || null
       };
     }
-    return { employeeId: aliasLower, canonicalName: displayName, email: null };
+    return { employeeId: aliasLower, canonicalName: displayName, email: null, fixedOut: null };
   }
 
   // ───────── actions: Publish (attendance + payroll draft) & Delete ─────────
@@ -887,7 +923,7 @@ const AttendancePage = () => {
   );
 
   return (
-    <div className="min-h-screen w-full bg-gray-500 rounded-2xl text-white pt-20 px-4 sm:px-6 lg:px-8 pb-8">
+    <div className="min-h-screen w-full bg-gray-900 rounded-2xl text-white pt-20 px-4 sm:px-6 lg:px-8 pb-8">
       <div className="max-w-7xl mx-auto">
         {/* Header + Actions */}
         <div className="mb-6 flex items-start justify-between gap-3">

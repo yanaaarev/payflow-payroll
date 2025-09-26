@@ -190,7 +190,7 @@ export default function FinanceSettingsPage() {
   /* ---------- UI ---------- */
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-900 text-white flex items-center justify-center">
+      <div className="min-h-screen bg-gray-900 rounded-2xl text-white flex items-center justify-center">
         <div>Loading…</div>
       </div>
     );

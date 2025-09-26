@@ -139,7 +139,7 @@ export default function EmployeesPage() {
   }, [employees, searchTerm]);
 
   return (
-    <div className="min-h-screen bg-gray-900 text-white pt-20 px-4 sm:px-6 lg:px-8 pb-8">
+    <div className="min-h-screen bg-gray-900 rounded-2xl text-white pt-20 px-4 sm:px-6 lg:px-8 pb-8">
       <div className="max-w-7xl mx-auto">
         {/* Header */}
         <div className="mb-8 flex items-center justify-between">

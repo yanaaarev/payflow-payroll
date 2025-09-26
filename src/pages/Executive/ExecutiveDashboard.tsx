@@ -74,7 +74,7 @@ const ExecutiveDashboard: React.FC = () => {
   }, []);
 
   return (
-    <div className="min-h-screen bg-gray-900 text-white pt-20 pb-12">
+    <div className="min-h-screen bg-gray-900 rounded-2xl text-white pt-20 pb-12">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-10">
         {/* Header */}
         <header className="space-y-1">

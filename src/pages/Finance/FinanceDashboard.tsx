@@ -95,7 +95,7 @@ const FinanceDashboard: React.FC = () => {
         );
         setPendingBudgetsCount(budSnap.size);
 
-        // Cash Advances (pending) — dedicated coll, else fallback to requests
+        // Cash Advances (pending)
         let caCount = 0;
         const caSnap = await getDocs(
           query(collection(db, "cashAdvances"), where("status", "==", "pending"))
@@ -123,7 +123,7 @@ const FinanceDashboard: React.FC = () => {
         );
         setDraftPayrollCount(pdDraft.size + pdReview.size);
 
-        // Open drafts list (newest across draft + finance_review)
+        // Open drafts list (newest)
         const listDrafts: PayrollDraft[] = [];
         pdDraft.forEach((d) => listDrafts.push({ id: d.id, ...(d.data() as any) }));
         pdReview.forEach((d) => listDrafts.push({ id: d.id, ...(d.data() as any) }));
@@ -199,12 +199,12 @@ const FinanceDashboard: React.FC = () => {
 
   /* ───────── UI ───────── */
   return (
-    <div className="min-h-screen bg-gray-900 text-white pt-20 px-4 sm:px-6 lg:px-8 pb-12">
+    <div className="min-h-screen bg-gray-900 rounded-2xl text-white pt-20 px-4 sm:px-6 lg:px-8 pb-12">
       <div className="max-w-7xl mx-auto space-y-8">
         {/* Header */}
         <header className="flex flex-col items-center text-center gap-2 sm:flex-row sm:items-end sm:justify-between sm:text-left">
           <div>
-            <h1 className="text-2xl md:text-3xl font-extrabold bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">
+            <h1 className="text-2xl md:text-3xl font-bold text-white">
               Finance Dashboard
             </h1>
             <p className="text-gray-300 mt-1">
@@ -215,7 +215,7 @@ const FinanceDashboard: React.FC = () => {
         </header>
 
         {/* Stats */}
-        <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <section className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           {stats.map((s, idx) => (
             <button
               key={idx}
@@ -224,7 +224,7 @@ const FinanceDashboard: React.FC = () => {
             >
               <div className="h-full w-full p-5 flex flex-col items-center justify-center text-center gap-1">
                 <p className="text-sm text-gray-300">{s.label}</p>
-                <p className="text-3xl font-black tracking-tight">
+                <p className="text-2xl font-black tracking-tight">
                   {loading ? "…" : s.value}
                 </p>
               </div>
@@ -233,20 +233,22 @@ const FinanceDashboard: React.FC = () => {
         </section>
 
         {/* Main grid */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
           {/* Quick Actions */}
           <section className="rounded-2xl border border-white/10 bg-gray-800/40 p-5">
             <h2 className="text-lg font-semibold text-center sm:text-left mb-4">Quick Actions</h2>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
               {quickActions.map((a, i) => (
-                <button
-                  key={i}
-                  onClick={() => navigate(a.path)}
-                  className="flex items-center justify-center gap-3 p-3.5 bg-gray-900/40 hover:bg-gray-900/60 rounded-xl border border-white/10 transition text-center"
-                >
-                  <span className="text-xl">{a.icon}</span>
-                  <span className="text-white font-medium">{a.label}</span>
-                </button>
+            <button
+              key={i}
+              onClick={() => navigate(a.path)}
+              className="flex flex-col items-center justify-center gap-2 
+                        p-4 bg-gray-900/40 hover:bg-gray-900/60 rounded-xl 
+                        border border-white/10 transition text-center"
+            >
+              <span className="text-2xl">{a.icon}</span>
+              <span className="font-medium text-sm">{a.label}</span>
+            </button>
               ))}
             </div>
           </section>
@@ -268,8 +270,8 @@ const FinanceDashboard: React.FC = () => {
               <div className="text-gray-400 p-6 text-center">No drafts in progress.</div>
             ) : (
               <div className="overflow-x-auto rounded-xl border border-white/10">
-                <table className="w-full">
-                  <thead className="text-sm text-gray-300 border-b border-white/10 bg-gray-800/60">
+                <table className="w-full text-sm">
+                  <thead className="text-gray-300 border-b border-white/10 bg-gray-800/60">
                     <tr>
                       <th className="text-left py-2.5 px-3">Cutoff</th>
                       <th className="text-left py-2.5 px-3">Status</th>
@@ -291,7 +293,7 @@ const FinanceDashboard: React.FC = () => {
                             {d.status.replace("_", " ")}
                           </span>
                         </td>
-                        <td className="py-2.5 px-3 text-sm text-gray-300">
+                        <td className="py-2.5 px-3 text-gray-300">
                           {toDate(d.createdAt)?.toLocaleString() || "—"}
                         </td>
                       </tr>
@@ -318,7 +320,7 @@ const FinanceDashboard: React.FC = () => {
             ) : pendingRequests.length === 0 ? (
               <div className="text-gray-400 p-4 text-center">No pending requests.</div>
             ) : (
-              <ul className="divide-y divide-white/10">
+              <ul className="divide-y divide-white/10 text-sm">
                 {pendingRequests.map((r) => (
                   <li key={r.id} className="py-3 flex items-center justify-between">
                     <div className="min-w-0">
@@ -347,7 +349,7 @@ const FinanceDashboard: React.FC = () => {
             ) : activities.length === 0 ? (
               <div className="text-gray-400 p-4 text-center">No recent activity recorded.</div>
             ) : (
-              <ul className="divide-y divide-white/10">
+              <ul className="divide-y divide-white/10 text-sm">
                 {activities.map((a) => (
                   <li key={a.id} className="py-3 flex items-center justify-between">
                     <div className="min-w-0 pr-3">

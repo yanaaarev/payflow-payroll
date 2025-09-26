@@ -1,5 +1,5 @@
 // src/pages/PayrollPage.tsx
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   getFirestore,
@@ -56,6 +56,13 @@ export default function PayrollPage() {
   const [userReady, setUserReady] = useState(false);
   const [error, setError] = useState("");
 
+  const [stats, setStats] = useState({
+  totalEmployees: 0,
+  draftPayrolls: 0,
+  pendingApprovals: 0,
+  monthlyPayroll: 0,
+});
+
   // Wait for auth (rules require signed in)
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, () => setUserReady(true));
@@ -63,54 +70,75 @@ export default function PayrollPage() {
   }, []);
 
   useEffect(() => {
-    if (!userReady) return;
-    (async () => {
-      try {
-        setError("");
-        setLoading(true);
-        const qy = query(collection(db, "payrollDrafts"), orderBy("createdAt", "desc"), limit(50));
-        const snap = await getDocs(qy);
-        const rows: DraftHead[] = [];
-        snap.forEach((doc) => {
-          const d = doc.data() as Partial<DraftHead>;
-          rows.push({
-            id: doc.id,
-            status: (d.status as DraftHead["status"]) ?? "draft",
-            periodKey: d.periodKey ?? "—",
-            cutoffLabel: d.cutoffLabel ?? null,
-            cutoffStart: d.cutoffStart ?? null,
-            cutoffEnd: d.cutoffEnd ?? null,
-            createdAt: (d.createdAt as Timestamp) ?? null,
-            createdBy: d.createdBy ?? null,
-            requiredExecApprovals: d.requiredExecApprovals ?? 2,
-            execApprovals: d.execApprovals ?? [],
-            adminApproval: d.adminApproval ?? null,
-            totals: d.totals ?? {},
-          });
-        });
-        setDrafts(rows);
-      } catch (e: any) {
-        setError(e?.message || "Failed to load drafts.");
-      } finally {
-        setLoading(false);
-      }
-    })();
-  }, [userReady]);
+  if (!userReady) return;
+  (async () => {
+    try {
+      setError("");
+      setLoading(true);
+      const qy = query(collection(db, "payrollDrafts"), orderBy("createdAt", "desc"), limit(50));
+      const snap = await getDocs(qy);
 
-  // Derive stats
-  const stats = useMemo(() => {
-    const totalEmployees = drafts.reduce((acc, d) => acc + (d.totals?.count || 0), 0) || 0;
-    const draftPayrolls = drafts.filter((d) => d.status !== "published").length;
-    const pendingApprovals = drafts.filter(
-      (d) => d.status === "pending_exec" || d.status === "pending_admin"
-    ).length;
-    const latest = drafts[0];
-    const monthlyPayroll = latest?.totals?.gross || 0;
-    return { totalEmployees, draftPayrolls, pendingApprovals, monthlyPayroll };
-  }, [drafts]);
+      const rows: DraftHead[] = [];
+      let totalEmployees = 0;
+      let latestGross = 0;
+
+      for (const docSnap of snap.docs) {
+        const d = docSnap.data() as Partial<DraftHead>;
+
+        // 🔽 Fetch lines subcollection for this draft
+        const linesSnap = await getDocs(collection(db, "payrollDrafts", docSnap.id, "lines"));
+        const employees = linesSnap.docs.length; // count employees
+        totalEmployees += employees;
+
+        // You may want to compute gross/net here from lines
+        // Example: sum(hoursWorked * hourlyRate) if you store rates
+        // For now, assume gross/net = 0 unless stored elsewhere
+        if (latestGross === 0 && linesSnap.docs.length > 0) {
+          latestGross = linesSnap.docs.reduce((sum, line) => {
+            const data = line.data();
+            return sum + (data.gross || 0); // ensure you store gross per line
+          }, 0);
+        }
+
+        rows.push({
+          id: docSnap.id,
+          status: (d.status as DraftHead["status"]) ?? "draft",
+          periodKey: d.periodKey ?? "—",
+          cutoffLabel: d.cutoffLabel ?? null,
+          cutoffStart: d.cutoffStart ?? null,
+          cutoffEnd: d.cutoffEnd ?? null,
+          createdAt: (d.createdAt as Timestamp) ?? null,
+          createdBy: d.createdBy ?? { uid: "—", name: "—" },
+          requiredExecApprovals: typeof d.requiredExecApprovals === "number" ? d.requiredExecApprovals : 2,
+          execApprovals: Array.isArray(d.execApprovals) ? d.execApprovals : [],
+          adminApproval: d.adminApproval ?? null,
+          totals: {
+            gross: 0, // or compute if you store line gross
+            net: 0,   // same here
+            count: employees,
+          },
+        });
+      }
+
+      setDrafts(rows);
+      setStats({
+        totalEmployees,
+        draftPayrolls: rows.filter((d) => d.status !== "published").length,
+        pendingApprovals: rows.filter((d) => d.status === "pending_exec" || d.status === "pending_admin").length,
+        monthlyPayroll: latestGross,
+      });
+
+    } catch (e: any) {
+      setError(e?.message || "Failed to load drafts.");
+    } finally {
+      setLoading(false);
+    }
+  })();
+}, [userReady]);
+
 
   return (
-    <div className="min-h-screen bg-gray-900 text-white pt-20 px-4 sm:px-6 lg:px-8 pb-8">
+    <div className="min-h-screen bg-gray-900 rounded-2xl text-white pt-20 px-4 sm:px-6 lg:px-8 pb-8">
       <div className="max-w-7xl mx-auto">
         {/* Header */}
         <div className="mb-8">
@@ -202,7 +230,11 @@ export default function PayrollPage() {
                   </thead>
                   <tbody>
                     {drafts.map((d) => (
-                      <tr key={d.id} className="border-b border-gray-700/40 hover:bg-white/5 transition">
+                      <tr
+                        key={d.id}
+                        className="border-b border-gray-700/40 even:bg-gray-800/30 hover:bg-white/5 transition"
+                      >
+
                         <td className="py-3 px-4">
                           <span
                             className={`inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium ${
@@ -210,7 +242,7 @@ export default function PayrollPage() {
                               "bg-gray-500/20 text-gray-200 ring-1 ring-inset ring-gray-500/30"
                             }`}
                           >
-                            {d.status.replace("_", " ")}
+                            {d.status.replace(/_/g, " ")}
                           </span>
                         </td>
                         <td className="py-3 px-4 text-gray-300">
@@ -239,16 +271,8 @@ export default function PayrollPage() {
               </div>
             )}
           </div>
-
-          {/* Placeholder for future audit log list */}
-          <div className="bg-gray-800/50 backdrop-blur-sm rounded-xl border border-white/10 p-6">
-            <h2 className="text-xl font-semibold mb-4">Recent Activity</h2>
-            <div className="text-sm text-gray-300">
-              <p className="opacity-75">Hook this up to <code>auditLogs</code> later.</p>
             </div>
           </div>
         </div>
-      </div>
-    </div>
   );
 }

@@ -131,7 +131,7 @@ export default function CashAdvancePage() {
   };
 
   return (
-  <div className="min-h-screen bg-gray-900 text-white pt-20 px-4 sm:px-6 lg:px-8 pb-12">
+  <div className="min-h-screen bg-gray-900 rounded-2xl text-white pt-20 px-4 sm:px-6 lg:px-8 pb-12">
     {/* Top */}
     <div className="max-w-3xl mx-auto mb-6">
       <button

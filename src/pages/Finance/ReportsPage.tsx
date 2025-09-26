@@ -297,7 +297,7 @@ setDrafts(results);
 
   /* ───────── UI ───────── */
   return (
-    <div className="min-h-screen bg-gray-900 text-white pt-20 pb-20">
+    <div className="min-h-screen bg-gray-900 rounded-2xl text-white pt-20 pb-20">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
 
         {/* Header & Actions */}

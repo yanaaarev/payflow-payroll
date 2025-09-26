@@ -227,7 +227,7 @@ export default function ProfilePage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-900 text-white pt-20 flex items-center justify-center">
+      <div className="min-h-screen bg-gray-900 rounded-2xl text-white pt-20 flex items-center justify-center">
         <div className="text-gray-300">Loading profile…</div>
       </div>
     );
@@ -257,102 +257,103 @@ export default function ProfilePage() {
         </header>
 
         <div className="rounded-2xl border border-white/10 bg-gray-800/40 overflow-hidden">
-          <div className="px-6 py-4 border-b border-white/10 text-lg font-semibold">
-            Profile Details
+      <div className="px-4 sm:px-6 py-3 sm:py-4 border-b border-white/10 text-lg font-semibold">
+        Profile Details
+      </div>
+
+      <div className="p-4 sm:p-6 space-y-5">
+        <Field>
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1 sm:gap-2">
+            <Label>Name</Label>
+            <SourcePill label={nameSource} />
           </div>
+          <input
+            className="inp h-11 w-full"
+            placeholder="Your full name"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+          />
+          <Hint>We display the name from your employees record.</Hint>
+        </Field>
 
-          <div className="p-6 space-y-5">
-            <Field>
-              <div className="flex items-center justify-between">
-                <Label>Name</Label>
-                <SourcePill label={nameSource} />
-              </div>
-              <input
-                className="inp h-11"
-                placeholder="Your full name"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-              />
-              <Hint>We display the name from your employees record.</Hint>
-            </Field>
-
-            <Field>
-              <div className="flex items-center justify-between">
-                <Label>Email</Label>
-                <SourcePill label={emailSource} />
-              </div>
-              <input
-                className="inp h-11"
-                type="email"
-                placeholder="you@company.com"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-              />
-              <Hint>Changing email may require your current password.</Hint>
-            </Field>
-
-            <div className="grid gap-4">
-              <Field>
-                <Label>Current Password (required if changing email or password)</Label>
-                <input
-                  className="inp h-11"
-                  type="password"
-                  placeholder="••••••••"
-                  value={currentPw}
-                  onChange={(e) => setCurrentPw(e.target.value)}
-                />
-              </Field>
-
-              <div className="grid sm:grid-cols-2 gap-4">
-                <Field>
-                  <Label>New Password</Label>
-                  <input
-                    className="inp h-11"
-                    type="password"
-                    placeholder="New password"
-                    value={newPw}
-                    onChange={(e) => setNewPw(e.target.value)}
-                  />
-                </Field>
-                <Field>
-                  <Label>Confirm New Password</Label>
-                  <input
-                    className="inp h-11"
-                    type="password"
-                    placeholder="Confirm new password"
-                    value={confirmPw}
-                    onChange={(e) => setConfirmPw(e.target.value)}
-                  />
-                </Field>
-              </div>
-              <Hint>Leave password fields blank if you’re not changing your password.</Hint>
-            </div>
-
-            {message && (
-              <div
-                className={`rounded-lg px-3 py-2 text-sm ${
-                  status === "success"
-                    ? "bg-emerald-600/20 text-emerald-200 border border-emerald-500/30"
-                    : status === "error"
-                    ? "bg-rose-600/20 text-rose-200 border border-rose-500/30"
-                    : "bg-gray-700/40 text-gray-200 border border-gray-500/30"
-                }`}
-              >
-                {message}
-              </div>
-            )}
-
-            <div className="pt-2">
-              <button
-                onClick={handleSave}
-                disabled={!canSave}
-                className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 disabled:opacity-60"
-              >
-                {status === "saving" ? "Saving…" : "Save Changes"}
-              </button>
-            </div>
+        <Field>
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1 sm:gap-2">
+            <Label>Email</Label>
+            <SourcePill label={emailSource} />
           </div>
+          <input
+            className="inp h-11 w-full"
+            type="email"
+            placeholder="you@company.com"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+          />
+          <Hint>Changing email may require your current password.</Hint>
+        </Field>
+
+        <div className="grid gap-4">
+          <Field>
+            <Label>Current Password (required if changing email or password)</Label>
+            <input
+              className="inp h-11 w-full"
+              type="password"
+              placeholder="••••••••"
+              value={currentPw}
+              onChange={(e) => setCurrentPw(e.target.value)}
+            />
+          </Field>
+
+          <div className="grid sm:grid-cols-2 gap-4">
+            <Field>
+              <Label>New Password</Label>
+              <input
+                className="inp h-11 w-full"
+                type="password"
+                placeholder="New password"
+                value={newPw}
+                onChange={(e) => setNewPw(e.target.value)}
+              />
+            </Field>
+            <Field>
+              <Label>Confirm New Password</Label>
+              <input
+                className="inp h-11 w-full"
+                type="password"
+                placeholder="Confirm new password"
+                value={confirmPw}
+                onChange={(e) => setConfirmPw(e.target.value)}
+              />
+            </Field>
+          </div>
+          <Hint>Leave password fields blank if you’re not changing your password.</Hint>
         </div>
+
+        {message && (
+          <div
+            className={`rounded-lg px-3 py-2 text-sm ${
+              status === "success"
+                ? "bg-emerald-600/20 text-emerald-200 border border-emerald-500/30"
+                : status === "error"
+                ? "bg-rose-600/20 text-rose-200 border border-rose-500/30"
+                : "bg-gray-700/40 text-gray-200 border border-gray-500/30"
+            }`}
+          >
+            {message}
+          </div>
+        )}
+
+        <div className="pt-2">
+          <button
+            onClick={handleSave}
+            disabled={!canSave}
+            className="w-full sm:w-auto px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 disabled:opacity-60"
+          >
+            {status === "saving" ? "Saving…" : "Save Changes"}
+          </button>
+        </div>
+      </div>
+    </div>
+
 
         <div className="text-xs text-gray-400">
           Name and email are mirrored to <code>employees/{myUid}</code> and also kept in Firebase Auth.

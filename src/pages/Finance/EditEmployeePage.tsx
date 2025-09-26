@@ -496,7 +496,7 @@ export default function EditEmployeePage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-900 text-white pt-20 px-4 sm:px-6 lg:px-8 pb-16">
+    <div className="min-h-screen bg-gray-900 rounded-2xl text-white pt-20 px-4 sm:px-6 lg:px-8 pb-16">
       {/* Top bar */}
       <div className="max-w-5xl mx-auto mb-6">
         <button onClick={() => navigate("/finance/employees")} className="text-blue-400 hover:text-blue-300">

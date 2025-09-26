@@ -285,7 +285,7 @@ export default function EmployeeDetailPage() {
 
   if (!employee) {
     return (
-      <div className="min-h-screen bg-gray-900 text-white pt-20 px-4">
+      <div className="min-h-screen bg-gray-900 rounded-2xl text-white pt-20 px-4">
         <div className="max-w-3xl mx-auto">
           <button
             onClick={() => navigate("/finance/employees")}

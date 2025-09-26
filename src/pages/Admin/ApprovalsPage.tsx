@@ -210,7 +210,7 @@ async function rejectRequest(id: string) {
 
   /* ---------- UI ---------- */
   return (
-    <div className="min-h-screen bg-gray-900 text-white pt-20 pb-24">
+    <div className="min-h-screen bg-gray-900 rounded-2xl text-white pt-20 pb-24">
       <div className="max-w-7xl mx-auto px-6 space-y-8">
         {/* Header */}
         <div className="text-center space-y-2">
@@ -221,28 +221,27 @@ async function rejectRequest(id: string) {
         </div>
 
         {/* Tabs + Search */}
-        <div className="flex items-center gap-4">
-          <div className="inline-flex rounded-xl overflow-hidden border border-white/10">
-            {["approvals", "history"].map((k) => (
-              <button
-                key={k}
-                onClick={() => setTab(k as any)}
-                className={`px-4 py-2 ${
-                  tab === k ? "bg-blue-600" : "bg-gray-800/40"
-                } hover:bg-blue-500`}
-              >
-                {k === "approvals" ? "Approvals" : "History"}
-              </button>
-            ))}
-          </div>
-          <input
-            className="flex-1 inp h-12"
-            placeholder="Search…"
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-          />
+      <div className="flex flex-col sm:flex-row gap-3">
+        <div className="inline-flex rounded-xl overflow-hidden border border-white/10">
+          {["approvals", "history"].map((k) => (
+            <button
+              key={k}
+              onClick={() => setTab(k as any)}
+              className={`px-4 py-2 text-sm sm:text-base ${
+                tab === k ? "bg-blue-600" : "bg-gray-800/40"
+              } hover:bg-blue-500`}
+            >
+              {k === "approvals" ? "Approvals" : "History"}
+            </button>
+          ))}
         </div>
-
+        <input
+          className="flex-1 inp h-11 sm:h-12 text-sm sm:text-base"
+          placeholder="Search…"
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+        />
+      </div>
        
 {/* Panels */}
 {tab === "approvals" && (
@@ -551,12 +550,10 @@ function DetailsView({
       : "text-yellow-400 border border-yellow-400/40 bg-yellow-400/10";
 
   return (
-    <div className="px-6 py-5 flex justify-between items-center border-b border-white/10">
-      {/* Show only the requester/title */}
-      <div className="font-semibold text-base">{title}</div>
+    <div className="px-3 sm:px-6 py-4 flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3 border-b border-white/10">
+      <div className="font-semibold text-base truncate">{title}</div>
 
-      {/* Status + View button */}
-      <div className="flex items-center gap-3">
+      <div className="flex flex-wrap items-center gap-2 sm:gap-3">
         {status && (
           <span
             className={`px-3 py-1 rounded-full text-xs font-medium ${statusStyles}`}
@@ -569,7 +566,6 @@ function DetailsView({
     </div>
   );
 }
-
 
 function Empty({ text }: { text: string }) {
   return <div className="p-10 text-center text-gray-400">{text}</div>;

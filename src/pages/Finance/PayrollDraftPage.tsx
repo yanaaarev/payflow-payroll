@@ -756,6 +756,19 @@ useEffect(() => {
   });
 }
 
+useEffect(() => {
+  if (!draftId || !previewTotals) return;
+  updateDoc(doc(db, "payrollDrafts", draftId), {
+    totals: {
+      gross: previewTotals.gross,
+      net: previewTotals.net,
+      count: previewTotals.count,
+    },
+    updatedAt: serverTimestamp(),
+  }).catch(() => {});
+}, [draftId, previewTotals.gross, previewTotals.net, previewTotals.count]);
+
+
   async function adminFinalApprove() {
   if (!draftId || !isAdminFinal || !head) return;
   const auth = getAuth();
@@ -914,18 +927,22 @@ if (employeeEmail) {
     }
 
     // ✅ mark draft as approved
-    tx.update(draftRef, {
-      adminApproval: {
-        uid: u.uid,
-        name: u.displayName || u.email || "admin_final",
-        at: serverTimestamp(),
-      },
-      status: "approved",
-      updatedAt: serverTimestamp(),
-    });
+   tx.update(draftRef, {
+  adminApproval: {
+    uid: u.uid,
+    name: u.displayName || u.email || "admin_final",
+    at: serverTimestamp(),
+  },
+  status: "approved",
+  totals: {
+    gross: previewTotals.gross,
+    net: previewTotals.net,
+    count: previewTotals.count,
+  },
+  updatedAt: serverTimestamp(),
+});
   });
 }
-
 
     async function rejectDraft(role: string) {
     if (!draftId) return;
