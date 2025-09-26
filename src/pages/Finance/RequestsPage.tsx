@@ -364,7 +364,7 @@ export default function RequestsPage() {
 
     if (type === "remotework" || type === "wfh" || type === "rdot") {
       Object.assign(base, {
-        location: type === "rdot" ? undefined : location || undefined,
+        location: type === "remotework" ? undefined : location || undefined,
         timeIn,
         timeOut,
         hours: workedHours,
@@ -406,7 +406,6 @@ await fetch("/api/sendEmail", {
          ${type === "ob" ? `<b>Category:</b> ${OB_LABEL[obCategoryKey]}<br/>` : ""}
          ${type === "ot" ? `<b>OT Hours:</b> ${otHours}<br/>` : ""}
          ${(type === "remotework" || type === "wfh" || type === "rdot") ? `<b>Hours:</b> ${workedHours}<br/>` : ""}
-         <b>Location:</b> ${location || "—"}<br/>
          <b>Proof:</b> ${proofUrl || "—"}</p>
          <b>Reason:</b> ${reason || "—"}</p>
       <p><a href="https://payflow-payroll.vercel.app/approvals">Review in Approvals</a></p>
