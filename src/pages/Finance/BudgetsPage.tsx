@@ -203,6 +203,7 @@ await fetch("/api/sendEmail", {
       <p>A new budget request has been filed by <b>${requesterName}</b>.</p>
       <p><b>Title:</b> ${title}<br/>
          <b>Amount:</b> ₱${Number(amount).toLocaleString()}<br/>
+         <b>Type:</b> ${kind.toUpperCase()}<br/>
          <b>Needed:</b> ${dateNeeded}</p>
       <p><a href="https://yourapp.com/approvals">Review in Approvals</a></p>
     `,
