@@ -363,14 +363,14 @@ export default function RequestsPage() {
     }
 
     if (type === "remotework" || type === "wfh" || type === "rdot") {
-      Object.assign(base, {
-        location: type === "remotework" ? undefined : location || undefined,
-        timeIn,
-        timeOut,
-        hours: workedHours,
-        reason: reason || undefined,
-      });
-    }
+  Object.assign(base, {
+    ...(type === "remotework" ? { location: location || undefined } : {}), // ✅ only for remotework
+    timeIn,
+    timeOut,
+    hours: workedHours,
+    reason: reason || undefined,
+  });
+}
 
     if (type === "sl" || type === "bl" || type === "vl") {
       Object.assign(base, { kind: type.toUpperCase() });
@@ -647,15 +647,16 @@ await fetch("/api/sendEmail", {
             )}
 
             {/* Remote / WFH / RDOT */}
-            {(type === "remotework" || type === "wfh" || type === "rdot") && (
+           {(type === "remotework" || type === "wfh" || type === "rdot") && (
               <div className="space-y-4">
-                {type !== "rdot" && (
+                {type === "remotework" && ( // ✅ only remotework needs location
                   <div>
                     <label className="lbl">Location</label>
                     <input
                       value={location}
                       onChange={(e) => setLocation(e.target.value)}
                       className="inp"
+                      required
                     />
                   </div>
                 )}
