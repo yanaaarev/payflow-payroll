@@ -25,7 +25,6 @@ import ReportsPage from "./pages/Finance/ReportsPage";
 import MyPayslipPage from "./pages/Finance/MyPayslipPage";
 import AuditLogsPage from "./pages/Finance/AuditLogsPage";
 import ApprovalsPage from "./pages/Admin/ApprovalsPage";
-import NotificationsPage from "./pages/NotificationsPage";
 import FinanceSettingsPage from "./pages/Finance/FinanceSettingsPage";
 import ProfilePage from "./pages/Employee/ProfilePage";
 import ViewingBudget from "./pages/Viewing/ViewingBudget";
@@ -325,16 +324,6 @@ export default function App() {
             element={
               <RoleGate allow={["admin_final", "finance", "exec"]}>
                 <FinanceSettingsPage />
-              </RoleGate>
-            }
-          />
-
-          {/* Common pages */}
-          <Route
-            path="/notifications"
-            element={
-              <RoleGate allow={["admin_final", "admin_overseer", "exec", "finance", "employee"]}>
-                <NotificationsPage />
               </RoleGate>
             }
           />

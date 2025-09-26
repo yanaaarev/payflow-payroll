@@ -836,14 +836,24 @@ function RequestDetail({ r }: { r: RequestDoc }) {
         <Row label="Type" value={r.type.toUpperCase()} />
       )}
 
-      {d.proofUrl && (
-        <div className="text-sm text-gray-300">
-          Proof of Approval:{" "}
-          <a href={d.proofUrl} target="_blank" rel="noreferrer" className="text-blue-300 underline">
-            View
-          </a>
-        </div>
-      )}
+      {/* Proof */}
+    {d.proofUrl && (
+      <div>
+        <label className="lbl">Proof of Approval</label>
+        <a
+          href={
+            d.proofUrl.startsWith("http://") || d.proofUrl.startsWith("https://")
+              ? d.proofUrl
+              : `https://${d.proofUrl}`
+          }
+          target="_blank"
+          rel="noreferrer"
+          className="text-blue-300 underline block"
+        >
+          View Proof
+        </a>
+      </div>
+    )}
     </div>
   );
 }

@@ -4,6 +4,7 @@ import { signInWithEmailAndPassword } from "firebase/auth";
 import { doc, getDoc } from "firebase/firestore";
 import { auth, db } from "../firebase/firebase";
 import { useNavigate } from "react-router-dom";
+import ipLogo from "../assets/iplogo.png";
 
 /* ───────────────────── Role mapping (aligned with App.tsx) ───────────────────── */
 type PageRole = "admin_final" | "admin_overseer" | "exec" | "finance" | "employee";
@@ -47,7 +48,7 @@ function mapUserRolesToPageRoles(
 
   const norm = normalizeRoles(rolesFromUsers, legacyRole);
   const out = new Set<PageRole>();
-  if (norm.includes("admin")) out.add("admin_final"); // treat 'admin' as the final admin
+  if (norm.includes("admin")) out.add("admin_final");
   if (norm.includes("exec") || norm.includes("executive")) out.add("exec");
   if (norm.includes("finance")) out.add("finance");
   if (out.size === 0) out.add("employee");
@@ -78,24 +79,20 @@ const Login = () => {
     setLoading(true);
 
     try {
-      // 1) Auth sign-in
       const cred = await signInWithEmailAndPassword(auth, email.trim(), password);
       const user = cred.user;
 
-      // 2) Read users/{uid}
       const uref = doc(db, "users", user.uid);
       const usnap = await getDoc(uref).catch(() => null);
       const udata = usnap && usnap.exists() ? (usnap.data() as any) : undefined;
 
-      // 3) Map to page roles (supports roles[] or role string)
       const pageRoles = mapUserRolesToPageRoles(
         user.uid,
         user.email,
-        udata?.roles, // array OR string
-        udata?.role   // legacy single role
+        udata?.roles,
+        udata?.role
       );
 
-      // If not owner and no users doc/roles → block
       const isOwnerFinal =
         user.uid === OWNER_ADMIN_FINAL.uid || (user.email || "").toLowerCase() === OWNER_ADMIN_FINAL.email;
       const isOwnerOverseer =
@@ -107,7 +104,6 @@ const Login = () => {
         return;
       }
 
-      // 4) Persist minimal session (store pageRoles for fast hydration used by App.tsx)
       localStorage.setItem(
         "user",
         JSON.stringify({
@@ -127,7 +123,6 @@ const Login = () => {
         })
       );
 
-      // 5) Route to the correct landing page
       navigate(landingFor(pageRoles), { replace: true });
     } catch (err: any) {
       console.error("Login error:", err);
@@ -142,88 +137,45 @@ const Login = () => {
   };
 
   return (
-    <div
-      className="
-        min-h-screen
-        max-w-screen
-        bg-gray-900
-        flex items-center justify-center
-        relative
-        overflow-hidden
-      "
-    >
-      {/* Background Gradient */}
-      <div className="absolute inset-0 bg-gradient-to-br from-blue-600/10 to-purple-900/10" />
-
+    <div className="min-h-screen bg-gray-900 flex items-center rounded-2xl justify-center px-4 sm:px-6 lg:px-8">
       {/* Login Card */}
-      <div
-        className="
-          w-full max-w-md
-          bg-black/20 backdrop-blur-lg
-          rounded-2xl
-          border border-white/20
-          shadow-2xl
-          overflow-hidden
-          transition-all duration-300
-          hover:border-white/30
-        "
-      >
-        {/* Header */}
-        <div className="text-center py-8 px-6">
-          <h1 className="text-3xl font-bold text-white tracking-wide">PayFlow</h1>
-          <p className="mt-2 text-gray-300 text-sm">Sign in to your payroll account</p>
+      <div className="w-full max-w-md bg-black/30 backdrop-blur-md rounded-2xl border border-white/10 shadow-2xl p-8">
+        {/* Logo + Header */}
+        <div className="text-center mb-8">
+          <img
+          src={ipLogo}
+          alt="Insta Payflow Logo"
+          className="mx-auto h-16 w-16 object-contain mb-4"
+        />
+          <h1 className="text-3xl font-bold text-white">Insta Payflow</h1>
+          <p className="mt-2 text-gray-400 text-sm">Secure Payroll Login</p>
         </div>
 
-        {/* Form */}
-        <form onSubmit={handleLogin} className="px-6 pb-8">
-          {error && (
-            <div
-              className="
-                mb-4
-                p-3
-                bg-red-500/20
-                border border-red-500/30
-                text-red-200
-                text-sm
-                rounded-xl
-                text-center
-              "
-            >
-              {error}
-            </div>
-          )}
+        {/* Error */}
+        {error && (
+          <div className="mb-4 p-3 bg-red-500/20 border border-red-500/30 text-red-200 text-sm rounded-xl text-center">
+            {error}
+          </div>
+        )}
 
+        {/* Form */}
+        <form onSubmit={handleLogin} className="space-y-5">
           {/* Email */}
-          <div className="mb-5">
-            <label className="block text-sm font-medium text-gray-200 mb-2">Email Address</label>
+          <div>
+            <label className="block text-sm font-medium text-gray-200 mb-2">Email</label>
             <input
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               required
               disabled={loading}
-              className="
-                w-full
-                px-4 py-3
-                bg-white/10
-                border border-white/20
-                placeholder-gray-400
-                text-white
-                rounded-xl
-                focus:outline-none
-                focus:ring-2
-                focus:ring-blue-500
-                focus:border-transparent
-                disabled:opacity-60
-                disabled:cursor-not-allowed
-                transition
-              "
+              className="w-full px-4 py-3 bg-white/10 border border-white/20 placeholder-gray-400 text-white rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:opacity-60 transition"
               placeholder="you@company.com"
             />
           </div>
 
           {/* Password */}
-          <div className="mb-6">
+          <div>
             <label className="block text-sm font-medium text-gray-200 mb-2">Password</label>
             <div className="relative">
               <input
@@ -232,29 +184,13 @@ const Login = () => {
                 onChange={(e) => setPassword(e.target.value)}
                 required
                 disabled={loading}
-                className="
-                  w-full
-                  px-4 py-3
-                  bg-white/10
-                  border border-white/20
-                  placeholder-gray-400
-                  text-white
-                  rounded-xl
-                  focus:outline-none
-                  focus:ring-2
-                  focus:ring-blue-500
-                  focus:border-transparent
-                  disabled:opacity-60
-                  disabled:cursor-not-allowed
-                  transition
-                  pr-12
-                "
+                className="w-full px-4 py-3 bg-white/10 border border-white/20 placeholder-gray-400 text-white rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:opacity-60 transition pr-12"
                 placeholder="••••••••"
               />
               <button
                 type="button"
                 onClick={() => setShowPw((s) => !s)}
-                className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-300 hover:text-white text-sm px-2 py-1"
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-white text-xs"
                 tabIndex={-1}
               >
                 {showPw ? "Hide" : "Show"}
@@ -266,20 +202,7 @@ const Login = () => {
           <button
             type="submit"
             disabled={loading}
-            className="
-              w-full
-              py-3
-              bg-gradient-to-r from-blue-600 to-indigo-700
-              hover:from-blue-700 hover:to-indigo-800
-              disabled:from-gray-600 disabled:to-gray-700
-              text-white
-              font-semibold
-              rounded-xl
-              transition
-              duration-200
-              flex items-center justify-center
-              gap-2
-            "
+            className="w-full py-3 bg-gradient-to-r from-blue-600 to-indigo-700 hover:from-blue-700 hover:to-indigo-800 disabled:from-gray-600 disabled:to-gray-700 text-white font-semibold rounded-xl transition duration-200 flex items-center justify-center gap-2"
           >
             {loading ? (
               <>
