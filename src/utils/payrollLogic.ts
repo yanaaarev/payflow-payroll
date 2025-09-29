@@ -15,8 +15,9 @@ export interface PayrollInput {
   holidayOtDoubleHours: number;
   tardinessMinutes: number;
   cutoffWorkingDays?: number;
+  fixedWorkedDays?: number; // 👈 NEW — support fixed divisor
   category: "core" | "core_probationary" | "intern" | "freelancer" | "owner";
-  obCategory?: "videographer" | "assisted" | "talent"; // 👈 added talent for completeness
+  obCategory?: "videographer" | "assisted" | "talent";
   benefits?: { sss: boolean; pagibig: boolean; philhealth: boolean };
   cashAdvance: {
     totalAmount: number;
@@ -24,10 +25,10 @@ export interface PayrollInput {
     currentCutOff: "first" | "second";
     startDateCutOff: "first" | "second";
     approved: boolean;
-    override?: number; // for manual override
+    override?: number; // 👈 for manual override
   };
   manualNetPay?: number; // for manual override
-  obPayFromReqs?: number; // 👈 NEW — injected from filed requests
+  obPayFromReqs?: number; // 👈 injected from filed requests
 }
 
 export interface PayrollOutput {
@@ -98,8 +99,12 @@ export const calculatePayroll = (data: PayrollInput): PayrollOutput => {
   switch (data.category) {
     case "core": {
       const cutoffBase = safeMonthly / 2;
-      const cutoffWorkingDays = data.cutoffWorkingDays || workedDays || 1;
-      dailyRate = cutoffBase / cutoffWorkingDays;
+      const divisor =
+        (data.fixedWorkedDays && data.fixedWorkedDays > 0
+          ? data.fixedWorkedDays
+          : data.cutoffWorkingDays) || workedDays || 1;
+
+      dailyRate = cutoffBase / divisor;
       cutoffPay = dailyRate * workedDays;
       break;
     }
@@ -120,15 +125,12 @@ export const calculatePayroll = (data: PayrollInput): PayrollOutput => {
     }
   }
 
-  // 2. Gross Pay (OB-based fixed rates)
+  // 2. OB Pay
   const obQuantity = Number(data.obQuantity) || 0;
   let obPay = 0;
-
-  // ✅ Primary: honor suggestedRate passed from filed requests
   if (typeof data.obPayFromReqs === "number" && data.obPayFromReqs > 0) {
     obPay = data.obPayFromReqs;
   } else {
-    // Fallback legacy rules
     if (data.category === "intern") {
       obPay = obQuantity * 500;
     } else {
@@ -171,25 +173,24 @@ export const calculatePayroll = (data: PayrollInput): PayrollOutput => {
   const tardinessDeduction =
     tardyMins > 0 ? Number(((dailyRate / 480) * tardyMins).toFixed(2)) : 0;
 
-// 7. Cash Advance
-let cashAdvanceDeduction = 0;
+  // 7. Cash Advance
+  let cashAdvanceDeduction = 0;
+  if (typeof data.cashAdvance.override === "number") {
+    cashAdvanceDeduction = data.cashAdvance.override;
+  } else if (data.cashAdvance.approved && data.cashAdvance.perCutOff > 0) {
+    const sameHalf =
+      data.cashAdvance.currentCutOff === data.cashAdvance.startDateCutOff;
+    const secondHalfAfterFirstStart =
+      data.cashAdvance.startDateCutOff === "first" &&
+      data.cashAdvance.currentCutOff === "second";
 
-// ✅ manual override takes priority
-if (typeof data.cashAdvance.override === "number") {
-  cashAdvanceDeduction = data.cashAdvance.override;
-} else if (data.cashAdvance.approved && data.cashAdvance.perCutOff > 0) {
-  const sameHalf = data.cashAdvance.currentCutOff === data.cashAdvance.startDateCutOff;
-  const secondHalfAfterFirstStart =
-    data.cashAdvance.startDateCutOff === "first" &&
-    data.cashAdvance.currentCutOff === "second";
-
-  if (sameHalf || secondHalfAfterFirstStart) {
-    cashAdvanceDeduction = Math.min(
-      data.cashAdvance.perCutOff,
-      data.cashAdvance.totalAmount
-    );
+    if (sameHalf || secondHalfAfterFirstStart) {
+      cashAdvanceDeduction = Math.min(
+        data.cashAdvance.perCutOff,
+        data.cashAdvance.totalAmount
+      );
+    }
   }
-}
 
   // 8. Totals
   const totalDeductions =

@@ -1428,6 +1428,7 @@ if (typeof ln.manualCashAdvance === "number") {
     perDayRate: meta.perDayRate,
     cutoffWorkingDays: head?.workedDays || 0,
     workedDays,
+    fixedWorkedDays: meta.fixedWorkedDays || 0,   
     obQuantity,
     obPayFromReqs, // ✅ new field for OB from requests
     otHours,
@@ -1680,7 +1681,7 @@ const alreadyAdminApproved =
   {canEdit ? (
     <input
       type="number"
-      step="0.001"
+      step="00"
       min="0"
       value={ln.daysWorked?.toFixed(3) ?? totalDays.toFixed(3)}
       onChange={async (e) => {
