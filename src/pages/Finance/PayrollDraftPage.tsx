@@ -998,86 +998,85 @@ if (employeeEmail) {
 }
 
   async function saveDayEdit(lineId: string, index: number) {
-    if (!draftId || !editRow) return;
-    const line = lines.find((l) => l.id === lineId);
-    if (!line) return;
+  if (!draftId || !editRow) return;
+  const line = lines.find((l) => l.id === lineId);
+  if (!line) return;
 
-    const newArr = [...line.timeInOut];
-    const row = newArr[index];
-    const newIn = editRow.in ? toISOTAt(row.date, editRow.in) : null;
-    const newOut = editRow.out ? toISOTAt(row.date, editRow.out) : null;
-    newArr[index] = { ...row, in: newIn, out: newOut };
+  const newArr = [...line.timeInOut];
+  const row = newArr[index];
+  const newIn = editRow.in ? toISOTAt(row.date, editRow.in) : null;
+  const newOut = editRow.out ? toISOTAt(row.date, editRow.out) : null;
+  newArr[index] = { ...row, in: newIn, out: newOut };
 
-// inside saveDayEdit
-let h = 0;
-let d = 0;
-newArr.forEach((r) => {
-  const meta = empMeta[lineId];
-  const c = computeHoursAndDaysForOne(r.in, r.out, meta?.fixedOut);
-  h += c.hours;
+  // Recompute totals
+  let h = 0;
+  let d = 0;
+  newArr.forEach((r) => {
+    const meta = empMeta[lineId];
+    const c = computeHoursAndDaysForOne(r.in, r.out, meta?.fixedOut);
+    h += c.hours;
 
-  let daily = c.days;
+    let daily = c.days;
+    if (meta?.fixedOut) {
+      daily = r.in && r.out ? 1 : 0;
+    } else {
+      if (c.days >= 0.75) daily = 1;
+      else if (c.days >= 0.25) daily = 0.5;
+      else daily = 0;
+    }
+    d += daily;
+  });
 
-  // ✅ interns always full day if they have in+out
-  if (meta?.fixedOut) {
-    daily = r.in && r.out ? 1 : 0;
-  } else {
-    // ✅ snap fractions: 0, 0.5, 1 only
-    if (c.days >= 0.75) daily = 1;
-    else if (c.days >= 0.25) daily = 0.5;
-    else daily = 0;
-  }
+  h = Math.round(h * 100) / 100;
+  d = Math.round(d * 1000) / 1000;
 
-  d += daily;
-});
+  await updateDoc(doc(db, "payrollDrafts", draftId, "lines", lineId), {
+    timeInOut: newArr,
+    hoursWorked: h,
+    daysWorked: d,
+    updatedAt: serverTimestamp(),
+  });
 
-h = Math.round(h * 100) / 100;
-d = Math.round(d * 1000) / 1000;
+  setEditRow(null);
+}
 
-await updateDoc(doc(db, "payrollDrafts", draftId, "lines", lineId), {
-  timeInOut: newArr,
-  hoursWorked: h,
-  daysWorked: d,
-  updatedAt: serverTimestamp(),
-});
 
-h = Math.round(h * 100) / 100;
-d = Math.round(d * 1000) / 1000;
+async function deleteDay(lineId: string, index: number) {
+  if (!draftId) return;
+  const line = lines.find((l) => l.id === lineId);
+  if (!line) return;
 
-    await updateDoc(doc(db, "payrollDrafts", draftId, "lines", lineId), {
-      timeInOut: newArr,
-      hoursWorked: h,
-      daysWorked: d,
-      updatedAt: serverTimestamp(),
-    });
-    setEditRow(null);
-  }
+  const newArr = line.timeInOut.filter((_, i) => i !== index);
 
-  async function deleteDay(lineId: string, index: number) {
-    if (!draftId) return;
-    const line = lines.find((l) => l.id === lineId);
-    if (!line) return;
-    const newArr = line.timeInOut.filter((_, i) => i !== index);
+  let h = 0;
+  let d = 0;
+  newArr.forEach((r) => {
+    const meta = empMeta[lineId];
+    const c = computeHoursAndDaysForOne(r.in, r.out, meta?.fixedOut);
+    h += c.hours;
 
-   let h = 0;
-let d = 0;
-newArr.forEach((r) => {
-  const meta = empMeta[lineId];
-  const c = computeHoursAndDaysForOne(r.in, r.out, meta?.fixedOut);
-  h += c.hours;
+    let daily = c.days;
+    if (meta?.fixedOut) {
+      daily = r.in && r.out ? 1 : 0;
+    } else {
+      if (c.days >= 0.75) daily = 1;
+      else if (c.days >= 0.25) daily = 0.5;
+      else daily = 0;
+    }
+    d += daily;
+  });
 
-  let daily = c.days;
-  if (meta?.fixedOut) {
-    daily = r.in && r.out ? 1 : 0;
-  } else {
-    if (c.days >= 0.75) daily = 1;
-    else if (c.days >= 0.25) daily = 0.5;
-    else daily = 0;
-  }
+  h = Math.round(h * 100) / 100;
+  d = Math.round(d * 1000) / 1000;
 
-  d += daily;
-});
-  }
+  await updateDoc(doc(db, "payrollDrafts", draftId, "lines", lineId), {
+    timeInOut: newArr,
+    hoursWorked: h,
+    daysWorked: d,
+    updatedAt: serverTimestamp(),
+  });
+}
+
 
   // Commission modal helpers
   const openCommModal = (lineId: string) => {
