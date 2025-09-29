@@ -85,123 +85,122 @@ export default function MyPayslipsPage() {
   const [att, setAtt] = useState<AttendanceSnapshot | null>(null);
 
   useEffect(() => {
-  const auth = getAuth();
+    const auth = getAuth();
 
-  const unsub = onAuthStateChanged(auth, async (user: User | null) => {
-    setLoading(true);
+    const unsub = onAuthStateChanged(auth, async (user: User | null) => {
+      setLoading(true);
+      try {
+        if (!user) {
+          setMe(null);
+          setPayslips([]);
+          return;
+        }
+
+        const email = (user.email || "").toLowerCase();
+        setMe({ email, uid: user.uid });
+
+        const payslipRef = collection(db, "payslips");
+        let rows: PayslipDoc[] = [];
+
+        // 🔎 fetch by email
+        const snapEmail = await getDocs(query(payslipRef, where("employeeEmail", "==", email)));
+        snapEmail.forEach((d) => rows.push({ id: d.id, ...(d.data() as any) }));
+
+        // 🔎 fallback fetch by uid
+        if (rows.length === 0) {
+          const s2 = await getDocs(query(payslipRef, where("employeeId", "==", user.uid)));
+          s2.forEach((d) => rows.push({ id: d.id, ...(d.data() as any) }));
+        }
+
+        // 🔎 fallback fetch by alias
+        if (rows.length === 0) {
+          const empSnap = await getDocs(
+            query(collection(db, "employees"), where("email", "==", email))
+          );
+          if (!empSnap.empty) {
+            const emp = empSnap.docs[0].data() as any;
+            const alias = (emp.alias || "").toLowerCase();
+            if (alias) {
+              const s3 = await getDocs(query(payslipRef, where("employeeAlias", "==", alias)));
+              s3.forEach((d) => rows.push({ id: d.id, ...(d.data() as any) }));
+            }
+          }
+        }
+
+        // sort by cutoffEnd/createdAt
+        rows.sort((a, b) => {
+          const da = toDate(a.cutoffEnd) || toDate(a.createdAt) || new Date(0);
+          const dbb = toDate(b.cutoffEnd) || toDate(b.createdAt) || new Date(0);
+          return dbb.getTime() - da.getTime();
+        });
+
+        setPayslips(rows);
+      } finally {
+        setLoading(false);
+      }
+    });
+
+    return () => unsub();
+  }, []);
+
+  async function openSlip(p: PayslipDoc) {
+    setActive(p);
+    setOpen(true);
+    setAtt(null);
+
     try {
-      if (!user) {
-        setMe(null);
-        setPayslips([]);
-        return;
-      }
-
-      const email = (user.email || "").toLowerCase();
-      setMe({ email, uid: user.uid });
-
-      const payslipRef = collection(db, "payslips");
-      let rows: PayslipDoc[] = [];
-
-      // 🔎 fetch by email
-      const snapEmail = await getDocs(query(payslipRef, where("employeeEmail", "==", email)));
-      snapEmail.forEach((d) => rows.push({ id: d.id, ...(d.data() as any) }));
-
-      // 🔎 fallback fetch by uid
-      if (rows.length === 0) {
-        const s2 = await getDocs(query(payslipRef, where("employeeId", "==", user.uid)));
-        s2.forEach((d) => rows.push({ id: d.id, ...(d.data() as any) }));
-      }
-
-      // 🔎 fallback fetch by alias
-      if (rows.length === 0) {
+      // 🔑 fetch category from employees collection (fallback)
+      if (!p.category) {
         const empSnap = await getDocs(
-          query(collection(db, "employees"), where("email", "==", email))
+          query(collection(db, "employees"), where("alias", "==", p.employeeAlias))
         );
         if (!empSnap.empty) {
           const emp = empSnap.docs[0].data() as any;
-          const alias = (emp.alias || "").toLowerCase();
-          if (alias) {
-            const s3 = await getDocs(query(payslipRef, where("employeeAlias", "==", alias)));
-            s3.forEach((d) => rows.push({ id: d.id, ...(d.data() as any) }));
-          }
+          p.category = emp.category || "";
         }
       }
 
-      // sort by cutoffEnd/createdAt
-      rows.sort((a, b) => {
-        const da = toDate(a.cutoffEnd) || toDate(a.createdAt) || new Date(0);
-        const dbb = toDate(b.cutoffEnd) || toDate(b.createdAt) || new Date(0);
-        return dbb.getTime() - da.getTime();
+      const aSnap = await getDocs(query(collection(db, "attendance")));
+      let hit: AttendanceSnapshot | null = null;
+
+      aSnap.forEach((d) => {
+        const x = d.data() as any;
+        const samePeriod =
+          (p.periodKey && x.periodKey === p.periodKey) ||
+          (p.cutoffLabel && x.cutoffLabel === p.cutoffLabel);
+
+        if (samePeriod) {
+          hit = {
+            id: d.id,
+            ...(x as Record<string, any>),
+          } as AttendanceSnapshot;
+        }
       });
 
-      setPayslips(rows);
-    } finally {
-      setLoading(false);
-    }
-  });
+      if (hit) {
+        let itemsArr: any[] = [];
+        const rawItems: any = (hit as any).items ?? [];
 
-  return () => unsub();
-}, []);
+        if (Array.isArray(rawItems)) {
+          itemsArr = rawItems;
+        } else if (rawItems && typeof rawItems === "object") {
+          itemsArr = Object.values(rawItems);
+        }
 
+        // 🔑 Fix: compare payslip.employeeAlias to attendance.name
+        const empAlias = (p.employeeAlias || "").toLowerCase();
+        const mine = itemsArr.filter(
+          (it: any) => String(it?.name || "").toLowerCase() === empAlias
+        );
 
-  async function openSlip(p: PayslipDoc) {
-  setActive(p);
-  setOpen(true);
-  setAtt(null);
-
-  try {
-    // 🔑 fetch category from employees collection
-    if (!p.category) {
-      const empSnap = await getDocs(
-        query(collection(db, "employees"), where("alias", "==", p.employeeAlias))
-      );
-      if (!empSnap.empty) {
-        const emp = empSnap.docs[0].data() as any;
-        p.category = emp.category || "";
+        // ✅ Even if multiple logs match, include them all
+        if (mine.length > 0) {
+          setAtt({ ...(hit as any), items: mine });
+        } else {
+          console.warn("No attendance match for alias:", empAlias, itemsArr);
+          setAtt({ ...(hit as any), items: [] });
+        }
       }
-    }
-
-    const aSnap = await getDocs(query(collection(db, "attendance")));
-  let hit: AttendanceSnapshot | null = null;
-
-  aSnap.forEach((d) => {
-    const x = d.data() as any;
-    const samePeriod =
-      (p.periodKey && x.periodKey === p.periodKey) ||
-      (p.cutoffLabel && x.cutoffLabel === p.cutoffLabel);
-
-    if (samePeriod) {
-      hit = {
-        id: d.id,
-        ...(x as Record<string, any>),
-      } as AttendanceSnapshot;
-    }
-  });
-
-  if (hit) {
-  let itemsArr: any[] = [];
-  const rawItems: any = (hit as any).items ?? [];
-
-  if (Array.isArray(rawItems)) {
-    itemsArr = rawItems;
-  } else if (rawItems && typeof rawItems === "object") {
-    itemsArr = Object.values(rawItems);
-  }
-
-  // 🔑 Fix: compare payslip.employeeAlias to attendance.name
-  const empAlias = (p.employeeAlias || "").toLowerCase();
-  const mine = itemsArr.filter(
-    (it: any) => String(it?.name || "").toLowerCase() === empAlias
-  );
-
-  // ✅ Even if multiple logs match, include them all
-  if (mine.length > 0) {
-    setAtt({ ...(hit as any), items: mine });
-  } else {
-    console.warn("No attendance match for alias:", empAlias, itemsArr);
-    setAtt({ ...(hit as any), items: [] });
-  }
-}
     } catch (e) {
       console.error("Error getting attendance:", e);
     }
@@ -222,17 +221,17 @@ export default function MyPayslipsPage() {
       <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
         {/* Header */}
         <div className="text-center mb-8">
-          <h1 className="text-3xl font-bold">My Payslips</h1>
-          <p className="text-gray-300 mt-1">
+          <h1 className="text-2xl sm:text-3xl font-bold">My Payslips</h1>
+          <p className="text-gray-300 mt-1 text-sm sm:text-base">
             View and download your published payslips.
           </p>
         </div>
 
         {/* List */}
         <div className="rounded-2xl border border-white/10 bg-gray-800/40 overflow-hidden">
-          <div className="px-6 py-4 border-b border-white/10 flex items-center justify-between">
-            <div className="text-lg font-semibold">Available Payslips</div>
-            <div className="text-sm text-gray-400">{me?.email}</div>
+          <div className="px-4 sm:px-6 py-4 border-b border-white/10 flex items-center justify-between">
+            <div className="text-base sm:text-lg font-semibold">Available Payslips</div>
+            <div className="text-xs sm:text-sm text-gray-400">{me?.email}</div>
           </div>
 
           {loading ? (
@@ -253,11 +252,11 @@ export default function MyPayslipsPage() {
                 return (
                   <div
                     key={p.id}
-                    className="px-6 py-5 flex flex-wrap items-center justify-between gap-3 hover:bg-white/5"
+                    className="px-4 sm:px-6 py-5 flex flex-wrap items-center justify-between gap-3 hover:bg-white/5"
                   >
                     <div>
                       <div className="font-semibold">{label}</div>
-                      <div className="text-sm text-gray-300">
+                      <div className="text-xs sm:text-sm text-gray-300">
                         {p.employeeName || "—"} <span className="mx-2">•</span>{" "}
                         Net Pay{" "}
                         <span className="text-white font-medium">
@@ -268,7 +267,7 @@ export default function MyPayslipsPage() {
                     <div className="flex items-center gap-2">
                       <button
                         onClick={() => openSlip(p)}
-                        className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500"
+                        className="px-3 sm:px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-sm"
                       >
                         View / Download
                       </button>
@@ -310,35 +309,38 @@ function PayslipModal({
   const [downloading, setDownloading] = useState(false);
 
   async function handleDownload() {
-  if (!printRef.current) return;
+    if (!printRef.current) return;
 
-  setDownloading(true);
-  try {
-    const dataUrl = await toPng(printRef.current, { cacheBust: true, pixelRatio: 5 });
+    setDownloading(true);
+    try {
+      // Force exact A4 width for export for best quality (794px @ 96dpi)
+      printRef.current.classList.add("force-a4");
+      const dataUrl = await toPng(printRef.current, { cacheBust: true, pixelRatio: 3 });
 
-    const pdf = new jsPDF("p", "pt", "a4");
-    const pdfWidth = pdf.internal.pageSize.getWidth();
-  
+      const pdf = new jsPDF("p", "pt", "a4");
+      const pdfWidth = pdf.internal.pageSize.getWidth();
 
-    const img = new Image();
-    img.src = dataUrl;
+      const img = new Image();
+      img.src = dataUrl;
 
-    await new Promise((resolve) => {
-      img.onload = () => {
-        const imgWidth = pdfWidth - 40;
-        const imgHeight = (img.height * imgWidth) / img.width;
+      await new Promise((resolve) => {
+        img.onload = () => {
+          const imgWidth = pdfWidth - 40;
+          const imgHeight = (img.height * imgWidth) / img.width;
 
-        pdf.addImage(dataUrl, "PNG", 20, 20, imgWidth, imgHeight, undefined, "FAST");
-        pdf.save(buildFileName(payslip));
-        resolve(true);
-      };
-    });
-  } catch (e) {
-    console.error("Error generating PDF:", e);
-  } finally {
-    setDownloading(false);
+          pdf.addImage(dataUrl, "PNG", 20, 20, imgWidth, imgHeight, undefined, "FAST");
+          pdf.save(buildFileName(payslip));
+          resolve(true);
+        };
+      });
+    } catch (e) {
+      console.error("Error generating PDF:", e);
+    } finally {
+      // Return to responsive layout for viewing
+      printRef.current?.classList.remove("force-a4");
+      setDownloading(false);
+    }
   }
-}
 
   const earnings = payslip.earnings || [];
   const deductions = payslip.deductions || [];
@@ -351,38 +353,41 @@ function PayslipModal({
   const net = payslip.netPay ?? totE - totD;
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
-      <div className="w-full max-w-5xl max-h-[90vh] overflow-auto rounded-2xl border border-white/10 bg-gray-900">
+    <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-2 sm:p-4">
+      <div className="w-full sm:max-w-5xl max-h-[95vh] sm:max-h-[90vh] overflow-auto rounded-2xl border border-white/10 bg-gray-900">
         {/* Modal header */}
-        <div className="px-6 py-4 border-b border-white/10 flex items-center justify-between sticky top-0 bg-gray-900">
-          <div className="font-semibold">{title}</div>
+        <div className="px-3 sm:px-6 py-3 sm:py-4 border-b border-white/10 flex items-center justify-between sticky top-0 bg-gray-900">
+          <div className="font-semibold text-sm sm:text-base">{title}</div>
           <div className="flex items-center gap-2">
             <button
               onClick={handleDownload}
               disabled={downloading}
-              className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 disabled:bg-blue-900/40"
+              className="px-3 sm:px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 disabled:bg-blue-900/40 text-sm"
             >
               {downloading ? "Preparing…" : "Download PDF"}
             </button>
             <button
               onClick={onClose}
-              className="px-4 py-2 rounded-xl bg-gray-700 hover:bg-gray-600"
+              className="px-3 sm:px-4 py-2 rounded-xl bg-gray-700 hover:bg-gray-600 text-sm"
             >
               Close
             </button>
           </div>
         </div>
 
-        {/* Printable slip */}
-        <div ref={printRef} className="bg-white text-black p-10">
+        {/* Printable slip (responsive for viewing) */}
+        <div
+          ref={printRef}
+          className="bg-white text-black p-4 sm:p-8 md:p-10 mx-auto w-full max-w-[794px]"
+        >
           {/* Header with logo */}
-          <div className="flex items-center justify-between">
-            <h1 className="text-4xl font-extrabold font-serif">Payslip</h1>
-            <img src={iplogo} alt="Company Logo" className="h-12 object-contain" />
+          <div className="flex items-center justify-between gap-3">
+            <h1 className="text-2xl sm:text-3xl md:text-4xl font-extrabold font-serif">Payslip</h1>
+            <img src={iplogo} alt="Company Logo" className="h-8 sm:h-10 md:h-12 object-contain" />
           </div>
 
           {/* Employee + Period */}
-          <div className="grid grid-cols-2 gap-6 mt-6 text-sm font-medium">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6 mt-4 sm:mt-6 text-xs sm:text-sm font-medium">
             <div className="space-y-2">
               <Row2 label="EMPLOYEE" value={payslip.employeeName || "—"} />
               <Row2 label="DESIGNATION" value={payslip.designation || "—"} />
@@ -396,117 +401,129 @@ function PayslipModal({
           </div>
 
           {/* Earnings/Deductions */}
-          <div className="mt-6 border border-black">
-            <table className="w-full text-sm">
-              <thead className="bg-gray-100 font-bold">
-                <tr className="border-b border-black">
-                  <th className="text-left p-3 border-r border-black w-[40%]">EARNINGS</th>
-                  <th className="text-left p-3 border-r border-black">RATE/ HOUR</th>
-                  <th className="text-left p-3 border-r border-black">RATE/ DAY</th>
-                  <th className="text-right p-3">TOTAL AMOUNT</th>
-                </tr>
-              </thead>
-              <tbody>
-                {earnings.map((e, i) => (
-                  <tr key={i} className="border-b border-black align-top">
-                    <td className="p-3 border-r border-black font-medium">
-                      {e.label}
-                      {e.note && <div className="text-xs text-gray-600">{e.note}</div>}
-                    </td>
-                    <td className="p-3 border-r border-black">{e.rateHour || ""}</td>
-                    <td className="p-3 border-r border-black">{e.rateDay || ""}</td>
-                    <td className="p-3 text-right">{e.amount != null ? peso(e.amount) : ""}</td>
+          <div className="mt-4 sm:mt-6 border border-black rounded-none">
+            {/* Earnings Table */}
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs sm:text-sm min-w-[600px]">
+                <thead className="bg-gray-100 font-bold">
+                  <tr className="border-b border-black">
+                    <th className="text-left p-2 sm:p-3 border-r border-black w-[40%]">EARNINGS</th>
+                    <th className="text-left p-2 sm:p-3 border-r border-black">RATE/ HOUR</th>
+                    <th className="text-left p-2 sm:p-3 border-r border-black">RATE/ DAY</th>
+                    <th className="text-right p-2 sm:p-3">TOTAL AMOUNT</th>
                   </tr>
-                ))}
-                <tr>
-                  <td colSpan={3} className="p-3 font-semibold border-r border-black">TOTAL</td>
-                  <td className="p-3 text-right font-semibold">{peso(totE)}</td>
-                </tr>
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {earnings.map((e, i) => (
+                    <tr key={i} className="border-b border-black align-top">
+                      <td className="p-2 sm:p-3 border-r border-black font-medium">
+                        {e.label}
+                        {e.note && <div className="text-[10px] sm:text-xs text-gray-600">{e.note}</div>}
+                      </td>
+                      <td className="p-2 sm:p-3 border-r border-black">{e.rateHour || ""}</td>
+                      <td className="p-2 sm:p-3 border-r border-black">{e.rateDay || ""}</td>
+                      <td className="p-2 sm:p-3 text-right">{e.amount != null ? peso(e.amount) : ""}</td>
+                    </tr>
+                  ))}
+                  <tr>
+                    <td colSpan={3} className="p-2 sm:p-3 font-semibold border-r border-black">TOTAL</td>
+                    <td className="p-2 sm:p-3 text-right font-semibold">{peso(totE)}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
 
-            {/* Deductions */}
-            <table className="w-full text-sm border-t border-black">
-              <tbody>
-                <tr className="bg-gray-100 border-b border-black font-bold">
-                  <td className="p-3 border-r border-black w-[40%]">DEDUCTIONS</td>
-                  <td className="p-3 border-r border-black"></td>
-                  <td className="p-3 border-r border-black"></td>
-                  <td className="p-3 text-right"></td>
-                </tr>
-                {deductions.map((d, i) => (
-                  <tr key={i} className="border-b border-black">
-                    <td className="p-3 border-r border-black">{d.label}</td>
-                    <td className="p-3 border-r border-black">{d.rateHour || ""}</td>
-                    <td className="p-3 border-r border-black">{d.rateDay || ""}</td>
-                    <td className="p-3 text-right">{d.amount != null ? peso(d.amount) : ""}</td>
+            {/* Deductions Table */}
+            <div className="overflow-x-auto border-t border-black">
+              <table className="w-full text-xs sm:text-sm min-w-[600px]">
+                <tbody>
+                  <tr className="bg-gray-100 border-b border-black font-bold">
+                    <td className="p-2 sm:p-3 border-r border-black w-[40%]">DEDUCTIONS</td>
+                    <td className="p-2 sm:p-3 border-r border-black"></td>
+                    <td className="p-2 sm:p-3 border-r border-black"></td>
+                    <td className="p-2 sm:p-3 text-right"></td>
                   </tr>
-                ))}
-                <tr>
-                  <td colSpan={3} className="p-3 font-semibold border-r border-black">TOTAL DEDUCTIONS</td>
-                  <td className="p-3 text-right font-semibold">{peso(totD)}</td>
-                </tr>
-                <tr className="bg-gray-100 font-bold">
-                  <td colSpan={3} className="p-3 border-r border-black">TOTAL NET PAY</td>
-                  <td className="p-3 text-right text-lg font-extrabold">{peso(net)}</td>
-                </tr>
-              </tbody>
-            </table>
+                  {deductions.map((d, i) => (
+                    <tr key={i} className="border-b border-black">
+                      <td className="p-2 sm:p-3 border-r border-black">{d.label}</td>
+                      <td className="p-2 sm:p-3 border-r border-black">{d.rateHour || ""}</td>
+                      <td className="p-2 sm:p-3 border-r border-black">{d.rateDay || ""}</td>
+                      <td className="p-2 sm:p-3 text-right">{d.amount != null ? peso(d.amount) : ""}</td>
+                    </tr>
+                  ))}
+                  <tr>
+                    <td colSpan={3} className="p-2 sm:p-3 font-semibold border-r border-black">TOTAL DEDUCTIONS</td>
+                    <td className="p-2 sm:p-3 text-right font-semibold">{peso(totD)}</td>
+                  </tr>
+                  <tr className="bg-gray-100 font-bold">
+                    <td colSpan={3} className="p-2 sm:p-3 border-r border-black">TOTAL NET PAY</td>
+                    <td className="p-2 sm:p-3 text-right text-base sm:text-lg font-extrabold">{peso(net)}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
           </div>
 
           {/* Attendance */}
           {Array.isArray((attendance as any)?.items) && (attendance as any)?.items?.[0] && (
-            <div className="mt-8">
-              <div className="text-base font-bold mb-2">Attendance ({attendance?.cutoffLabel || payslip.cutoffLabel || ""})</div>
-              <table className="w-full text-xs border border-black">
-                <thead className="bg-gray-100 font-semibold">
-                  <tr className="border-b border-black">
-                    <th className="text-left p-2 border-r border-black">Date</th>
-                    <th className="text-left p-2 border-r border-black">In</th>
-                    <th className="text-left p-2 border-r border-black">Out</th>
-                    <th className="text-right p-2 border-r border-black">Hours</th>
-                  </tr>
-                </thead>
-                <tbody>
-                {((attendance as any)?.items || []).map((l: any, i: number) => {
-                  const category = (payslip.category || "").toLowerCase();
-
-                  // ✅ Hours vs Days depending on category
-                  let hoursOrDays;
-                  if (["core", "core-probationary", "owner"].includes(category)) {
-                    hoursOrDays = `${l?.daysWorked || 0} day(s)`;
-                  } else if (category === "intern") {
-                    hoursOrDays = `${Number(l?.hoursWorked || 0).toFixed(2)} hrs / ${l?.daysWorked || 0} day(s)`;
-                  } else {
-                    hoursOrDays = Number(l?.hoursWorked || 0).toFixed(2);
-                  }
-
-                  // ✅ Safe labels for IN/OUT
-                  const inLabel = l?.timeIn
-                    ? new Date(l.timeIn).toLocaleTimeString()
-                    : <span className="text-red-600 font-bold">NO IN</span>;
-                  const outLabel = l?.timeOut
-                    ? new Date(l.timeOut).toLocaleTimeString()
-                    : <span className="text-red-600 font-bold">NO OUT</span>;
-
-                  return (
-                    <tr key={i} className="border-b border-black">
-                      <td className="p-2 border-r border-black">{l?.date || ""}</td>
-                      <td className="p-2 border-r border-black">{inLabel}</td>
-                      <td className="p-2 border-r border-black">{outLabel}</td>
-                      <td className="p-2 border-r border-black text-right">{hoursOrDays}</td>
+            <div className="mt-6 sm:mt-8">
+              <div className="text-sm sm:text-base font-bold mb-2">
+                Attendance ({attendance?.cutoffLabel || payslip.cutoffLabel || ""})
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-[11px] sm:text-xs border border-black min-w-[560px]">
+                  <thead className="bg-gray-100 font-semibold">
+                    <tr className="border-b border-black">
+                      <th className="text-left p-2 border-r border-black">Date</th>
+                      <th className="text-left p-2 border-r border-black">In</th>
+                      <th className="text-left p-2 border-r border-black">Out</th>
+                      <th className="text-right p-2 border-r border-black">Hours/Days</th>
                     </tr>
-                  );
-                })}
-              </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {((attendance as any)?.items || []).map((l: any, i: number) => {
+                      const category = (payslip.category || "").toLowerCase();
+
+                      // ✅ Hours vs Days depending on category
+                      let hoursOrDays;
+                      if (["core", "core-probationary", "owner"].includes(category)) {
+                        hoursOrDays = `${l?.daysWorked || 0} day(s)`;
+                      } else if (category === "intern") {
+                        hoursOrDays = `${Number(l?.hoursWorked || 0).toFixed(2)} hrs / ${l?.daysWorked || 0} day(s)`;
+                      } else {
+                        hoursOrDays = Number(l?.hoursWorked || 0).toFixed(2);
+                      }
+
+                      // ✅ Safe labels for IN/OUT
+                      const inLabel = l?.timeIn
+                        ? new Date(l.timeIn).toLocaleTimeString()
+                        : <span className="text-red-600 font-bold">NO IN</span>;
+                      const outLabel = l?.timeOut
+                        ? new Date(l.timeOut).toLocaleTimeString()
+                        : <span className="text-red-600 font-bold">NO OUT</span>;
+
+                      return (
+                        <tr key={i} className="border-b border-black">
+                          <td className="p-2 border-r border-black">{l?.date || ""}</td>
+                          <td className="p-2 border-r border-black">{inLabel}</td>
+                          <td className="p-2 border-r border-black">{outLabel}</td>
+                          <td className="p-2 border-r border-black text-right">{hoursOrDays}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
             </div>
           )}
         </div>
       </div>
 
-      {/* Print styles */}
+      {/* Print and mobile helper styles */}
       <style>{`
+        /* lock to A4 width only during export */
+        .force-a4 { width: 794px !important; }
+
         @media print {
           body { background: #fff; margin: 0; padding: 0; }
           .bg-black\\/70, .backdrop-blur-sm, .fixed { position: static !important; inset: auto !important; }
