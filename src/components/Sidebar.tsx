@@ -177,11 +177,20 @@ const Sidebar: React.FC = () => {
         <FiMenu size={20} />
       </button>
 
-      {/* Desktop sidebar */}
+            {/* Desktop sidebar */}
       <aside
         className="hidden lg:flex fixed top-0 left-0 z-50 h-screen w-64 flex-col bg-[#0f1218]/90 text-white border-r border-white/10 backdrop-blur-md"
       >
-        <div className="flex flex-col h-full">
+        <div className="flex flex-col h-full relative">
+          {/* ✅ Close button for desktop */}
+          <button
+            onClick={() => setOpen(false)}
+            className="absolute top-3 right-3 p-2 rounded-md hover:bg-white/10"
+            aria-label="Close sidebar"
+          >
+            ✕
+          </button>
+
           <div className="px-4 py-5">
             <div className="text-lg font-semibold">Insta PayFlow</div>
             <div className="text-xs text-white/60">Payroll System</div>
@@ -219,6 +228,7 @@ const Sidebar: React.FC = () => {
           </div>
         </div>
       </aside>
+
 
       {/* Mobile drawer */}
       <aside

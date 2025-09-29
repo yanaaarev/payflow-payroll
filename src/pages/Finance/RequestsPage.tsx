@@ -11,6 +11,7 @@ import {
   doc,
   getDoc,
   where,
+  setDoc,
 } from "firebase/firestore";
 import { getAuth } from "firebase/auth";
 
@@ -41,7 +42,7 @@ type MyEmployee = {
 
 type Role = "admin_final" | "admin_overseer" | "exec" | "finance" | "employee";
 
-/* ========= Owners (hard override, same as other pages) ========= */
+/* ========= Owners (hard override) ========= */
 const OWNER_ADMIN_FINAL = {
   email: "jelynsonbattung@gmail.com",
   uid: "XddCcBNNErU0uTwcY3wb9whOoM83",
@@ -90,7 +91,7 @@ function normCategory(text: string): ObKey | null {
   return null;
 }
 
-/* ─────────── roles mapping (same pattern as Approvals/Settings) ─────────── */
+/* ─────────── roles mapping ─────────── */
 function mapUserRolesToPageRoles({
   uid,
   email,
@@ -101,7 +102,8 @@ function mapUserRolesToPageRoles({
   rolesFromUsers?: string[];
 }): Role[] {
   const lowerEmail = (email || "").toLowerCase();
-  if (uid === OWNER_ADMIN_FINAL.uid || lowerEmail === OWNER_ADMIN_FINAL.email) return ["admin_final"];
+  if (uid === OWNER_ADMIN_FINAL.uid || lowerEmail === OWNER_ADMIN_FINAL.email)
+    return ["admin_final"];
   if (uid === OWNER_ADMIN_OVERSEER.uid || lowerEmail === OWNER_ADMIN_OVERSEER.email)
     return ["admin_overseer"];
 
@@ -162,13 +164,16 @@ export default function RequestsPage() {
     [timeIn, timeOut]
   );
 
-  // which request types MUST have proof?
+  // proof required?
   const needsProof = useMemo(
     () => type === "ot" || type === "remotework" || type === "wfh" || type === "rdot",
     [type]
   );
 
-  /* ── Load roles for the current user (users/{uid}.roles) ── */
+  // disable double submit
+  const [submitting, setSubmitting] = useState(false);
+
+  /* ── Load roles ── */
   useEffect(() => {
     (async () => {
       setRolesLoading(true);
@@ -204,50 +209,63 @@ export default function RequestsPage() {
     [roles]
   );
 
-// ── load my employee via email
-useEffect(() => {
-  (async () => {
-    setLoadingMe(true);
-    try {
-      const email = auth.currentUser?.email?.toLowerCase() || "";
-      if (!email) {
-        setMeEmp(null);
-        return;
+  // ── load employee profile
+  useEffect(() => {
+    (async () => {
+      setLoadingMe(true);
+      try {
+        const u = auth.currentUser;
+        const email = u?.email?.toLowerCase() || "";
+        if (!u?.uid || !email) {
+          setMeEmp(null);
+          return;
+        }
+
+        const qSnap = await getDocs(
+          query(collection(db, "employees"), where("email", "==", email))
+        );
+
+        if (!qSnap.empty) {
+          const d = qSnap.docs[0];
+          const x = d.data() as any;
+          setMeEmp({
+            id: d.id,
+            employeeId: x.employeeId || u.uid,
+            name: x.name || u.displayName || "",
+            email: (x.email || email).toLowerCase(),
+            type: (x.type as EmpType) || "core",
+            obRates: Array.isArray(x.obRates)
+              ? x.obRates.map((r: any) => ({
+                  category: String(r?.category || r?.role || r?.title || ""),
+                  rate: Number(r?.rate ?? r?.amount ?? 0),
+                }))
+              : [],
+          });
+        } else {
+          const empRef = doc(db, "employees", u.uid);
+          await setDoc(empRef, {
+            employeeId: u.uid,
+            name: u.displayName || "",
+            email,
+            type: "core",
+            obRates: [],
+          });
+          setMeEmp({
+            id: u.uid,
+            employeeId: u.uid,
+            name: u.displayName || "",
+            email,
+            type: "core",
+            obRates: [],
+          });
+        }
+      } finally {
+        setLoadingMe(false);
       }
+    })();
+  }, [auth]);
 
-      const q = query(
-        collection(db, "employees"),
-        where("email", "==", email)
-      );
-      const snap = await getDocs(q);
-
-      if (!snap.empty) {
-        const d = snap.docs[0];
-        const x = d.data() as any;
-        setMeEmp({
-          id: d.id,
-          employeeId: x.employeeId || "",
-          name: x.name || "",
-          email: (x.email || "").toLowerCase(),
-          type: (x.type as EmpType) || "core",
-          obRates: Array.isArray(x.obRates)
-            ? x.obRates.map((r: any) => ({
-                category: String(r?.category || r?.role || r?.title || ""),
-                rate: Number(r?.rate ?? r?.amount ?? 0),
-              }))
-            : [],
-        });
-      } else {
-        setMeEmp(null);
-      }
-    } finally {
-      setLoadingMe(false);
-    }
-  })();
-}, [auth]);
-
-
-  // ── load requests (ONLY if user can view all)
+  // ── load requests
   useEffect(() => {
     (async () => {
       if (!canViewAll) {
@@ -281,6 +299,7 @@ useEffect(() => {
     })();
   }, [canViewAll]);
 
+  // filter
   const filtered = useMemo(() => {
     return requests.filter((r) => {
       const byType = filterType ? r.type === filterType : true;
@@ -297,20 +316,13 @@ useEffect(() => {
     });
   }, [requests, qText, filterType]);
 
-  // ── helper: find suggested OB rate for payroll
-  function suggestObRate(
-    emp: MyEmployee,
-    key: ObKey
-  ): { rate?: number; source?: string } {
-    if (emp.type === "intern") return { rate: 500, source: "fixed-intern" };
-
+  // ── OB rate logic
+  function suggestObRate(emp: MyEmployee, key: ObKey): { rate?: number; source?: string } {
+    if (emp.type === "intern" && key === "assisted") {
+      return { rate: 500, source: "fixed-intern-assisted" };
+    }
     if (emp.type === "core" && key === "assisted") {
-      const explicit = emp.obRates.find(
-        (r) => r.category?.toLowerCase() === "assisted"
-      );
-      return explicit
-        ? { rate: explicit.rate, source: "employee.obRates" }
-        : { rate: 1500, source: "fixed-core" };
+      return { rate: 1500, source: "fixed-core-assisted" };
     }
 
     const lookFor =
@@ -326,109 +338,110 @@ useEffect(() => {
   // ── submit
   async function submitRequest(e: React.FormEvent) {
     e.preventDefault();
-    if (!meEmp) {
-      alert(
-        "Your employee record was not found. Please ensure your email is set on your employee profile."
-      );
-      return;
-    }
+    if (submitting) return;
+    setSubmitting(true);
 
-    // block submit if proof is required and missing
-    if (needsProof && !proofUrl.trim()) {
-      alert("Proof of Approval is required for this request type.");
-      return;
-    }
+    try {
+      if (!meEmp) {
+        alert("Your employee record was not found. Please ensure your email is set on your employee profile.");
+        return;
+      }
 
-    // Build "details" object per type; include proof only when required
-    const base: any = { date };
-    if (needsProof) base.proofUrl = proofUrl.trim();
+      if (needsProof && !proofUrl.trim()) {
+        alert("Proof of Approval is required for this request type.");
+        return;
+      }
 
-    if (type === "ob") {
-      const { rate, source } = suggestObRate(meEmp, obCategoryKey);
-      Object.assign(base, {
-        title: obTitle,
-        location: location || undefined,
-        categoryKey: obCategoryKey,
-        categoryLabel: OB_LABEL[obCategoryKey],
-        suggestedRate: typeof rate === "number" ? rate : undefined,
-        rateSource: source,
+      const base: any = { date };
+      if (needsProof) base.proofUrl = proofUrl.trim();
+
+      if (type === "ob") {
+        const { rate, source } = suggestObRate(meEmp, obCategoryKey);
+        Object.assign(base, {
+          title: obTitle,
+          location: location || undefined,
+          categoryKey: obCategoryKey,
+          categoryLabel: OB_LABEL[obCategoryKey],
+          suggestedRate: typeof rate === "number" ? rate : undefined,
+          rateSource: source,
+        });
+      }
+
+      if (type === "ot") {
+        Object.assign(base, {
+          fixedStart: "17:30",
+          timeout: otTimeout,
+          hours: otHours,
+          reason: reason || undefined,
+        });
+      }
+
+      if (type === "remotework" || type === "wfh" || type === "rdot") {
+        Object.assign(base, {
+          ...(type === "remotework" ? { location: location || undefined } : {}),
+          timeIn,
+          timeOut,
+          hours: workedHours,
+          reason: reason || undefined,
+        });
+      }
+
+      if (type === "sl" || type === "bl" || type === "vl") {
+        Object.assign(base, { kind: type.toUpperCase() });
+      }
+
+      await addDoc(collection(db, "requests"), {
+        employeeId: meEmp.employeeId,
+        employeeName: meEmp.name,
+        type,
+        details: base,
+        status: "pending",
+        filedAt: serverTimestamp(),
+        filedBy: auth.currentUser?.email || "",
       });
-    }
 
-    if (type === "ot") {
-      Object.assign(base, {
-        fixedStart: "17:30",
-        timeout: otTimeout,
-        hours: otHours,
-        reason: reason || undefined,
+      await fetch("/api/sendEmail", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          to: [
+            "jelynsonbattung@gmail.com",
+            "hrfinance.instapost@gmail.com",
+            "auquilang.instapost@gmail.com",
+            "yana.instapost@gmail.com",
+          ],
+          subject: "📑 New Request Filed",
+          html: `
+            <p>A new <b>${type.toUpperCase()}</b> request has been filed by <b>${meEmp.name}</b>.</p>
+            <p><b>Date:</b> ${date}<br/>
+               <b>Type:</b> ${type.toUpperCase()}<br/>
+               ${type === "ob" ? `<b>Title:</b> ${obTitle}<br/>` : ""}
+               ${type === "ob" ? `<b>Category:</b> ${OB_LABEL[obCategoryKey]}<br/>` : ""}
+               ${type === "ot" ? `<b>OT Hours:</b> ${otHours}<br/>` : ""}
+               ${(type === "remotework" || type === "wfh" || type === "rdot") ? `<b>Hours:</b> ${workedHours}<br/>` : ""}
+               <b>Location:</b> ${location || "—"}</p>
+               <b>Proof:</b> ${proofUrl || "—"}</p>
+               <b>Reason:</b> ${reason || "—"}</p>
+            <p><a href="https://payflow-payroll.vercel.app/approvals">Review in Approvals</a></p>
+          `,
+        }),
       });
+
+      setDate("");
+      setReason("");
+      setLocation("");
+      setProofUrl("");
+      setObTitle("");
+      setObCategoryKey("assisted");
+      setOtTimeout("");
+      setTimeIn("");
+      setTimeOut("");
+      setTab(canViewAll ? "list" : "file");
+
+      alert("Request submitted for admin approval.");
+    } finally {
+      setSubmitting(false);
     }
-
-    if (type === "remotework" || type === "wfh" || type === "rdot") {
-  Object.assign(base, {
-    ...(type === "remotework" ? { location: location || undefined } : {}), // ✅ only for remotework
-    timeIn,
-    timeOut,
-    hours: workedHours,
-    reason: reason || undefined,
-  });
-}
-
-    if (type === "sl" || type === "bl" || type === "vl") {
-      Object.assign(base, { kind: type.toUpperCase() });
-    }
-
-    await addDoc(collection(db, "requests"), {
-      employeeId: meEmp.employeeId,
-      employeeName: meEmp.name,
-      type,
-      details: base,
-      status: "pending",
-      filedAt: serverTimestamp(),
-      filedBy: auth.currentUser?.email || "",
-    });
-
-// ✅ Notify approvers
-await fetch("/api/sendEmail", {
-  method: "POST",
-  headers: { "Content-Type": "application/json" },
-  body: JSON.stringify({
-    to: [
-      "jelynsonbattung@gmail.com",       // admin_final
-      "hrfinance.instapost@gmail.com",   // finance
-      "auquilang.instapost@gmail.com",   // exec
-      "yana.instapost@gmail.com",        // exec
-    ],
-    subject: "📑 New Request Filed",
-    html: `
-      <p>A new <b>${type.toUpperCase()}</b> request has been filed by <b>${meEmp.name}</b>.</p>
-      <p><b>Date:</b> ${date}<br/>
-         <b>Type:</b> ${type.toUpperCase()}<br/>
-         ${type === "ob" ? `<b>Title:</b> ${obTitle}<br/>` : ""}
-         ${type === "ob" ? `<b>Category:</b> ${OB_LABEL[obCategoryKey]}<br/>` : ""}
-         ${type === "ot" ? `<b>OT Hours:</b> ${otHours}<br/>` : ""}
-         ${(type === "remotework" || type === "wfh" || type === "rdot") ? `<b>Hours:</b> ${workedHours}<br/>` : ""}
-         <b>Location:</b> ${location || "—"}</p>
-         <b>Proof:</b> ${proofUrl || "—"}</p>
-         <b>Reason:</b> ${reason || "—"}</p>
-      <p><a href="https://payflow-payroll.vercel.app/approvals">Review in Approvals</a></p>
-    `,
-  }),
-});
-
-    // reset + switch
-    setDate("");
-    setReason("");
-    setLocation("");
-    setProofUrl("");
-    setObTitle("");
-    setObCategoryKey("assisted");
-    setOtTimeout("");
-    setTimeIn("");
-    setTimeOut("");
-    // If they can't view all, keep them on "file"; otherwise jump them back to list
-    setTab(canViewAll ? "list" : "file");
-    alert("Request submitted for admin approval.");
   }
 
   // ────────────────────────── UI ──────────────────────────
@@ -616,38 +629,46 @@ await fetch("/api/sendEmail", {
 
             {/* OT */}
             {type === "ot" && (
-              <div className="space-y-4">
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div>
-                    <label className="lbl">OT Starts At</label>
-                    <input className="inp" value="17:30" disabled />
-                  </div>
-                  <div>
-                    <label className="lbl">Time Out</label>
-                    <input
-                      type="time"
-                      value={otTimeout}
-                      onChange={(e) => setOtTimeout(e.target.value)}
-                      className="inp"
-                      required
-                    />
-                  </div>
-                  <div>
-                    <label className="lbl">Computed OT Hours</label>
-                    <input className="inp" value={otHours || ""} readOnly placeholder="0" />
-                  </div>
-                </div>
-                <div>
-                  <label className="lbl">Reason</label>
-                  <textarea
-                    rows={3}
-                    value={reason}
-                    onChange={(e) => setReason(e.target.value)}
-                    className="inp"
-                  />
-                </div>
-              </div>
-            )}
+  <div className="space-y-4">
+    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div>
+        <label className="lbl">OT Starts At</label>
+        <select
+          className="inp select-gray"
+          defaultValue="17:30"
+          disabled
+        >
+          <option value="16:00">4:00 PM</option>
+          <option value="17:30">5:30 PM</option>
+        </select>
+      </div>
+      <div>
+        <label className="lbl">Time Out</label>
+        <input
+          type="time"
+          value={otTimeout}
+          onChange={(e) => setOtTimeout(e.target.value)}
+          className="inp"
+          required
+        />
+      </div>
+      <div>
+        <label className="lbl">Computed OT Hours</label>
+        <input className="inp" value={otHours || ""} readOnly placeholder="0" />
+      </div>
+    </div>
+    <div>
+      <label className="lbl">Reason</label>
+      <textarea
+        rows={3}
+        value={reason}
+        onChange={(e) => setReason(e.target.value)}
+        className="inp"
+      />
+    </div>
+  </div>
+)}
+
 
             {/* Remote / WFH / RDOT */}
            {(type === "remotework" || type === "wfh" || type === "rdot") && (
