@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 import {
-  EmailAuthProvider,
   getAuth,
   onAuthStateChanged,
   reauthenticateWithCredential,
+  EmailAuthProvider,
   updateEmail as fbUpdateEmail,
-  updatePassword as fbUpdatePassword,
   updateProfile as fbUpdateProfile,
+  sendPasswordResetEmail,
 } from "firebase/auth";
 import type { User } from "firebase/auth";
 import { doc, getDoc, serverTimestamp, setDoc, updateDoc } from "firebase/firestore";
@@ -17,7 +17,7 @@ type SaveStatus = "idle" | "saving" | "success" | "error";
 
 type EmployeeDoc = {
   id: string;
-  name?: string;   // authoritative display name for employees
+  name?: string;
   email?: string;
   updatedAt?: any;
   updatedBy?: string;
@@ -63,29 +63,22 @@ export default function ProfilePage() {
   // Authoritative employee doc
   const [empDoc, setEmpDoc] = useState<EmployeeDoc | null>(null);
 
-  // Form fields (always derived from employees doc first)
+  // Form fields
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
-
-  // Password change (optional)
-  const [currentPw, setCurrentPw] = useState("");
-  const [newPw, setNewPw] = useState("");
-  const [confirmPw, setConfirmPw] = useState("");
 
   // UI state
   const [status, setStatus] = useState<SaveStatus>("idle");
   const [message, setMessage] = useState<string>("");
 
   const myUid = user?.uid || "";
-  //@ts-ignore
-  const myEmail = (user?.email || "").toLowerCase();
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (u) => setUser(u));
     return () => unsub();
   }, [auth]);
 
-  // Load employee doc FIRST and use it as the source of truth for name/email
+  // Load employee doc FIRST
   useEffect(() => {
     (async () => {
       setLoading(true);
@@ -99,7 +92,6 @@ export default function ProfilePage() {
         const nameFromEmployees = emp?.name ?? "";
         const emailFromEmployees = emp?.email ?? "";
 
-        // Prefer employees doc field; fall back to Auth if missing.
         setName(nameFromEmployees || user.displayName || "");
         setEmail(emailFromEmployees || user.email || "");
       } finally {
@@ -117,12 +109,9 @@ export default function ProfilePage() {
 
     const changingName = (name || "") !== (baseName || "");
     const changingEmail = (email.trim() || "") !== (baseEmail || "");
-    const changingPw = newPw.length > 0 || confirmPw.length > 0;
 
-    if (changingPw && (!currentPw || newPw !== confirmPw || newPw.length < 6)) return false;
-
-    return changingName || changingEmail || changingPw;
-  }, [user, empDoc, name, email, currentPw, newPw, confirmPw, status]);
+    return changingName || changingEmail;
+  }, [user, empDoc, name, email, status]);
 
   async function handleSave() {
     if (!user) return;
@@ -130,49 +119,24 @@ export default function ProfilePage() {
     setMessage("");
 
     try {
-      // Determine if we need re-auth (email/password)
       const baseEmail = empDoc?.email ?? user.email ?? "";
       const wantsEmailChange = email.trim() && email.trim() !== baseEmail;
-      const wantsPwChange = newPw.length > 0;
 
-      if ((wantsEmailChange || wantsPwChange) && user.email) {
-        if (!currentPw) {
-          setStatus("error");
-          setMessage("Please enter your current password to change email or password.");
-          return;
-        }
-        const cred = EmailAuthProvider.credential(user.email, currentPw);
+      if (wantsEmailChange && user.email) {
+        const cred = EmailAuthProvider.credential(user.email, prompt("Enter your current password") || "");
         await reauthenticateWithCredential(user, cred);
       }
 
-      // Update Firebase Auth displayName only if name changed
       const baseName = empDoc?.name ?? user.displayName ?? "";
       const wantsNameChange = (name || "") !== (baseName || "");
       if (wantsNameChange) {
         await fbUpdateProfile(user, { displayName: name || "" });
       }
 
-      // Update Firebase Auth email if changed (we still mirror to employees below)
       if (wantsEmailChange) {
         await fbUpdateEmail(user, email.trim());
       }
 
-      // Update password if requested
-      if (wantsPwChange) {
-        if (newPw !== confirmPw) {
-          setStatus("error");
-          setMessage("New password and confirmation do not match.");
-          return;
-        }
-        if (newPw.length < 6) {
-          setStatus("error");
-          setMessage("Password must be at least 6 characters.");
-          return;
-        }
-        await fbUpdatePassword(user, newPw);
-      }
-
-      // Mirror to Firestore: employees/{uid} (authoritative for name/email)
       const empRef = doc(db, "employees", user.uid);
       const payload = {
         name: name || null,
@@ -181,13 +145,11 @@ export default function ProfilePage() {
         updatedBy: user.uid,
       };
 
-      // Try update; if blocked or doc doesn't exist, set merge
       const okUpdate = await safeUpdate(empRef, payload, `employees/${user.uid}`);
       if (!okUpdate) {
         await safeSet(empRef, payload, `employees/${user.uid} [merge]`);
       }
 
-      // Refresh in-memory employees doc to reflect saved changes
       setEmpDoc((prev) => ({
         id: myUid,
         ...(prev || {}),
@@ -199,10 +161,6 @@ export default function ProfilePage() {
 
       setStatus("success");
       setMessage("Profile updated successfully.");
-      // Clear password fields
-      setCurrentPw("");
-      setNewPw("");
-      setConfirmPw("");
     } catch (e: any) {
       console.warn("[Profile] save failed:", e);
       setStatus("error");
@@ -215,13 +173,24 @@ export default function ProfilePage() {
         setMessage("That email is already in use by another account.");
       } else if (code === "auth/invalid-email") {
         setMessage("Please enter a valid email.");
-      } else if (code === "permission-denied") {
-        setMessage("Auth updated, but Firestore write was blocked by rules.");
       } else {
         setMessage(e?.message || "Failed to update profile.");
       }
     } finally {
       setStatus((s) => (s === "saving" ? "idle" : s));
+    }
+  }
+
+  async function handleResetPassword() {
+    if (!user?.email) return;
+    try {
+      await sendPasswordResetEmail(auth, user.email);
+      setStatus("success");
+      setMessage(`Password reset link sent to ${user.email}`);
+    } catch (e: any) {
+      console.error("Reset password failed", e);
+      setStatus("error");
+      setMessage("Failed to send reset email. Please try again later.");
     }
   }
 
@@ -244,7 +213,6 @@ export default function ProfilePage() {
     );
   }
 
-  // Labels for visibility: show where values are sourced from
   const nameSource = empDoc?.name ? "employees" : "auth";
   const emailSource = empDoc?.email ? "employees" : "auth";
 
@@ -253,107 +221,77 @@ export default function ProfilePage() {
       <div className="max-w-xl mx-auto px-4 space-y-8">
         <header className="space-y-2 text-center">
           <h1 className="text-3xl font-bold">My Profile</h1>
-          <p className="text-gray-300">Update your name, email, and password.</p>
+          <p className="text-gray-300">Update your name, email, and reset your password.</p>
         </header>
 
         <div className="rounded-2xl border border-white/10 bg-gray-800/40 overflow-hidden">
-      <div className="px-4 sm:px-6 py-3 sm:py-4 border-b border-white/10 text-lg font-semibold">
-        Profile Details
-      </div>
-
-      <div className="p-4 sm:p-6 space-y-5">
-        <Field>
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1 sm:gap-2">
-            <Label>Name</Label>
-            <SourcePill label={nameSource} />
+          <div className="px-4 sm:px-6 py-3 sm:py-4 border-b border-white/10 text-lg font-semibold">
+            Profile Details
           </div>
-          <input
-            className="inp h-11 w-full"
-            placeholder="Your full name"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-          />
-          <Hint>We display the name from your employees record.</Hint>
-        </Field>
 
-        <Field>
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1 sm:gap-2">
-            <Label>Email</Label>
-            <SourcePill label={emailSource} />
-          </div>
-          <input
-            className="inp h-11 w-full"
-            type="email"
-            placeholder="you@company.com"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-          />
-          <Hint>Changing email may require your current password.</Hint>
-        </Field>
-
-        <div className="grid gap-4">
-          <Field>
-            <Label>Current Password (required if changing email or password)</Label>
-            <input
-              className="inp h-11 w-full"
-              type="password"
-              placeholder="••••••••"
-              value={currentPw}
-              onChange={(e) => setCurrentPw(e.target.value)}
-            />
-          </Field>
-
-          <div className="grid sm:grid-cols-2 gap-4">
+          <div className="p-4 sm:p-6 space-y-5">
             <Field>
-              <Label>New Password</Label>
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1 sm:gap-2">
+                <Label>Name</Label>
+                <SourcePill label={nameSource} />
+              </div>
               <input
                 className="inp h-11 w-full"
-                type="password"
-                placeholder="New password"
-                value={newPw}
-                onChange={(e) => setNewPw(e.target.value)}
+                placeholder="Your full name"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
               />
             </Field>
+
             <Field>
-              <Label>Confirm New Password</Label>
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1 sm:gap-2">
+                <Label>Email</Label>
+                <SourcePill label={emailSource} />
+              </div>
               <input
                 className="inp h-11 w-full"
-                type="password"
-                placeholder="Confirm new password"
-                value={confirmPw}
-                onChange={(e) => setConfirmPw(e.target.value)}
+                type="email"
+                placeholder="you@company.com"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
               />
             </Field>
+
+            <Field>
+              <Label>Password</Label>
+              <button
+                onClick={handleResetPassword}
+                className="text-sm text-blue-400 hover:text-blue-300 underline"
+              >
+                Send password reset link to {user.email}
+              </button>
+            </Field>
+
+            {message && (
+              <div
+                className={`rounded-lg px-3 py-2 text-sm ${
+                  status === "success"
+                    ? "bg-emerald-600/20 text-emerald-200 border border-emerald-500/30"
+                    : status === "error"
+                    ? "bg-rose-600/20 text-rose-200 border border-rose-500/30"
+                    : "bg-gray-700/40 text-gray-200 border border-gray-500/30"
+                }`}
+              >
+                {message}
+              </div>
+            )}
+
+            <div className="pt-2">
+              <button
+                onClick={handleSave}
+                disabled={!canSave}
+                className="w-full sm:w-auto px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 disabled:opacity-60"
+              >
+                {status === "saving" ? "Saving…" : "Save Changes"}
+              </button>
+            </div>
           </div>
-          <Hint>Leave password fields blank if you’re not changing your password.</Hint>
         </div>
-
-        {message && (
-          <div
-            className={`rounded-lg px-3 py-2 text-sm ${
-              status === "success"
-                ? "bg-emerald-600/20 text-emerald-200 border border-emerald-500/30"
-                : status === "error"
-                ? "bg-rose-600/20 text-rose-200 border border-rose-500/30"
-                : "bg-gray-700/40 text-gray-200 border border-gray-500/30"
-            }`}
-          >
-            {message}
-          </div>
-        )}
-
-        <div className="pt-2">
-          <button
-            onClick={handleSave}
-            disabled={!canSave}
-            className="w-full sm:w-auto px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 disabled:opacity-60"
-          >
-            {status === "saving" ? "Saving…" : "Save Changes"}
-          </button>
-        </div>
-      </div>
-    </div>
-
 
         <div className="text-xs text-gray-400">
           Name and email are mirrored to <code>employees/{myUid}</code> and also kept in Firebase Auth.
@@ -386,9 +324,6 @@ function Field({ children }: { children: React.ReactNode }) {
 }
 function Label({ children }: { children: React.ReactNode }) {
   return <label className="block text-sm text-gray-200">{children}</label>;
-}
-function Hint({ children }: { children: React.ReactNode }) {
-  return <div className="text-xs text-gray-400">{children}</div>;
 }
 function SourcePill({ label }: { label: "employees" | "auth" }) {
   const style =

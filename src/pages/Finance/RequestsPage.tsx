@@ -33,13 +33,6 @@ const OB_LABEL: Record<ObKey, string> = {
   videographer: "Videographer",
   talent: "Talent",
 };
-function normCategory(text: string): ObKey | null {
-  const t = (text || "").toLowerCase().trim();
-  if (["assisted", "assist", "shoot"].includes(t)) return "assisted";
-  if (["videographer", "video", "vid"].includes(t)) return "videographer";
-  if (["talent", "actor", "model"].includes(t)) return "talent";
-  return null;
-}
 
 // ───────────────────── Component ───────────────────────
 export default function RequestsPage() {
@@ -146,22 +139,27 @@ export default function RequestsPage() {
     })();
   }, [auth]);
 
-  // ── OB rate logic
   function suggestObRate(emp: MyEmployee, key: ObKey): { rate?: number; source?: string } {
-    if (emp.type === "intern" && key === "assisted") {
-      return { rate: 500, source: "fixed-intern-assisted" };
-    }
-    if (emp.type === "core" && key === "assisted") {
-      return { rate: 1500, source: "fixed-core-assisted" };
-    }
-    const lookFor =
-      key === "videographer" ? "videographer" : key === "talent" ? "talent" : "assisted";
-    const hit =
-      emp.obRates.find((r) => r.category?.toLowerCase() === lookFor) ||
-      emp.obRates.find((r) => normCategory(r.category) === key);
-    if (hit) return { rate: hit.rate, source: "employee.obRates" };
-    return {};
+  // Interns always ₱500 for assisted
+  if (emp.type === "intern" && key === "assisted") {
+    return { rate: 500, source: "fixed-intern-assisted" };
   }
+
+  // Look up from employee's obRates
+  const label = OB_LABEL[key] || key;
+  const lookupKey = label.toLowerCase();
+
+  const hit = emp.obRates.find(
+    (r) => (r.category || "").toLowerCase().trim() === lookupKey
+  );
+
+  if (hit) {
+    return { rate: hit.rate, source: "employee.obRates" };
+  }
+
+  return {};
+}
+
 
   // ── submit
   async function submitRequest(e: React.FormEvent) {
@@ -184,16 +182,17 @@ export default function RequestsPage() {
       if (needsProof) base.proofUrl = proofUrl.trim();
 
       if (type === "ob") {
-        const { rate, source } = suggestObRate(meEmp, obCategoryKey);
-        Object.assign(base, {
-          title: obTitle,
-          location: location || undefined,
-          categoryKey: obCategoryKey,
-          categoryLabel: OB_LABEL[obCategoryKey],
-          suggestedRate: typeof rate === "number" ? rate : undefined,
-          rateSource: source,
-        });
-      }
+  const { rate, source } = suggestObRate(meEmp, obCategoryKey);
+  Object.assign(base, {
+    title: obTitle,
+    location: location || undefined,
+    categoryKey: obCategoryKey,
+    categoryLabel: OB_LABEL[obCategoryKey],
+    ...(typeof rate === "number" ? { suggestedRate: rate } : {}), // ✅ only add if defined
+    ...(source ? { rateSource: source } : {}), // ✅ only add if defined
+  });
+}
+
 
       if (type === "ot") {
         Object.assign(base, {

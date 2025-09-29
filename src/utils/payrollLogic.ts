@@ -6,6 +6,7 @@ export interface PayrollInput {
   allowancePerDay?: number;
   workedDays: number;
   obQuantity?: number;
+  obRate?: number; // 👈 keep but not used directly
   otHours: number;
   ndHours: number;
   rdotHours: number;
@@ -13,18 +14,20 @@ export interface PayrollInput {
   holidayDoubleHours: number;
   holidayOtDoubleHours: number;
   tardinessMinutes: number;
-  cutoffWorkingDays?: number; // <-- new input for core employees
-  category: 'core' | 'core_probationary' | 'intern' | 'freelancer' | 'owner';
-  obCategory?: 'videographer' | 'assisted';
+  cutoffWorkingDays?: number;
+  category: "core" | "core_probationary" | "intern" | "freelancer" | "owner";
+  obCategory?: "videographer" | "assisted" | "talent"; // 👈 added talent for completeness
   benefits?: { sss: boolean; pagibig: boolean; philhealth: boolean };
   cashAdvance: {
     totalAmount: number;
     perCutOff: number;
-    currentCutOff: 'first' | 'second';
-    startDateCutOff: 'first' | 'second';
+    currentCutOff: "first" | "second";
+    startDateCutOff: "first" | "second";
     approved: boolean;
+    override?: number; // for manual override
   };
   manualNetPay?: number; // for manual override
+  obPayFromReqs?: number; // 👈 NEW — injected from filed requests
 }
 
 export interface PayrollOutput {
@@ -48,7 +51,6 @@ export interface PayrollOutput {
   netPay: number;
 }
 
-// Removed WORKING_DAYS_PER_MONTH
 const DEFAULT_INTERN_DAILY = 125;
 const OWNER_CUTOFF_PAY = 60000;
 
@@ -77,6 +79,7 @@ export const calculatePayroll = (data: PayrollInput): PayrollOutput => {
       netPay: net,
     };
   }
+
   // Safe defaults
   const safeMonthly = Number(data.monthlySalary) || 0;
   const workedDays = Math.max(0, Number(data.workedDays) || 0);
@@ -94,17 +97,13 @@ export const calculatePayroll = (data: PayrollInput): PayrollOutput => {
   // 1. Base pay per category
   switch (data.category) {
     case "core": {
-  // ✅ Use cutoff-level working days (from head)
-  const cutoffBase = safeMonthly / 2;
-  // Use cutoffWorkingDays if provided, else fall back to workedDays
-  const cutoffWorkingDays = data.cutoffWorkingDays || workedDays || 1;
-  dailyRate = cutoffBase / cutoffWorkingDays;
-  cutoffPay = dailyRate * workedDays;
-  break;
-}
-
+      const cutoffBase = safeMonthly / 2;
+      const cutoffWorkingDays = data.cutoffWorkingDays || workedDays || 1;
+      dailyRate = cutoffBase / cutoffWorkingDays;
+      cutoffPay = dailyRate * workedDays;
+      break;
+    }
     case "core_probationary": {
-      // ✅ Probationary: fixed daily rate × actual worked days
       dailyRate = Number(data.perDayRate) || 0;
       cutoffPay = dailyRate * workedDays;
       break;
@@ -122,21 +121,26 @@ export const calculatePayroll = (data: PayrollInput): PayrollOutput => {
   }
 
   // 2. Gross Pay (OB-based fixed rates)
-const obQuantity = Number(data.obQuantity) || 0;
-let obPay = 0;
+  const obQuantity = Number(data.obQuantity) || 0;
+  let obPay = 0;
 
-if (data.category === "intern") {
-  // interns always fixed 500 per OB
-  obPay = obQuantity * 500;
-} else {
-  // core/freelancers/others
-  if (data.obCategory === "videographer") {
-    obPay = obQuantity * 2500;
+  // ✅ Primary: honor suggestedRate passed from filed requests
+  if (typeof data.obPayFromReqs === "number" && data.obPayFromReqs > 0) {
+    obPay = data.obPayFromReqs;
   } else {
-    // default assisted
-    obPay = obQuantity * 1500;
+    // Fallback legacy rules
+    if (data.category === "intern") {
+      obPay = obQuantity * 500;
+    } else {
+      if (data.obCategory === "videographer") {
+        obPay = obQuantity * 2500;
+      } else if (data.obCategory === "talent") {
+        obPay = obQuantity * 2000;
+      } else {
+        obPay = obQuantity * 1500; // default assisted
+      }
+    }
   }
-}
 
   // 3. OT & premiums
   const otRate = dailyRate / 8;
@@ -158,31 +162,34 @@ if (data.category === "intern") {
     holidayDoublePay +
     holidayOtDoublePay;
 
-  // 5. Gov’t deductions (flat values for now)
+  // 5. Gov’t deductions
   const sss = data.benefits?.sss ? 425 : 0;
   const pagibig = data.benefits?.pagibig ? 100 : 0;
   const philhealth = data.benefits?.philhealth ? 212.5 : 0;
 
-  // ✅ Tardiness deduction based ONLY on 7:01–7:59 mins (already filtered in draft)
-const tardinessDeduction =
-  tardyMins > 0 ? Number(((dailyRate / 480) * tardyMins).toFixed(2)) : 0;
+  // 6. Tardiness
+  const tardinessDeduction =
+    tardyMins > 0 ? Number(((dailyRate / 480) * tardyMins).toFixed(2)) : 0;
 
+// 7. Cash Advance
+let cashAdvanceDeduction = 0;
 
-  // 7. Cash Advance
-  let cashAdvanceDeduction = 0;
-  if (data.cashAdvance.approved && data.cashAdvance.perCutOff > 0) {
-    const sameHalf = data.cashAdvance.currentCutOff === data.cashAdvance.startDateCutOff;
-    const secondHalfAfterFirstStart =
-      data.cashAdvance.startDateCutOff === "first" &&
-      data.cashAdvance.currentCutOff === "second";
+// ✅ manual override takes priority
+if (typeof data.cashAdvance.override === "number") {
+  cashAdvanceDeduction = data.cashAdvance.override;
+} else if (data.cashAdvance.approved && data.cashAdvance.perCutOff > 0) {
+  const sameHalf = data.cashAdvance.currentCutOff === data.cashAdvance.startDateCutOff;
+  const secondHalfAfterFirstStart =
+    data.cashAdvance.startDateCutOff === "first" &&
+    data.cashAdvance.currentCutOff === "second";
 
-    if (sameHalf || secondHalfAfterFirstStart) {
-      cashAdvanceDeduction = Math.min(
-        data.cashAdvance.perCutOff,
-        data.cashAdvance.totalAmount
-      );
-    }
+  if (sameHalf || secondHalfAfterFirstStart) {
+    cashAdvanceDeduction = Math.min(
+      data.cashAdvance.perCutOff,
+      data.cashAdvance.totalAmount
+    );
   }
+}
 
   // 8. Totals
   const totalDeductions =

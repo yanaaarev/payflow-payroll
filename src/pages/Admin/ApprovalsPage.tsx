@@ -74,6 +74,7 @@ const canApproveRequest = canApproveBudget || roles.includes("exec");
   const [requests, setRequests] = useState<RequestRow[]>([]);
   const [budgets, setBudgets] = useState<BudgetRow[]>([]);
   const [drafts, setDrafts] = useState<PayrollDraft[]>([]);
+  const [processingIds, setProcessingIds] = useState<Set<string>>(new Set());
 
   /* ---------- Load Data ---------- */
   useEffect(() => {
@@ -136,46 +137,13 @@ const canApproveRequest = canApproveBudget || roles.includes("exec");
     [drafts, ql]
   );
 
-async function approveBudget(id: string) {
-  await updateDoc(doc(db, "budgets", id), { status: "approved" });
-
-  // 🔔 notify requester
-  const b = budgets.find((x) => x.id === id);
-  if (b?.requesterEmail) {
-    await fetch("/api/sendEmail", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        to: b.requesterEmail,
-        subject: "✅ Budget Approved",
-        html: `<p>Hi ${b.requesterName}, your budget "<b>${b.title}</b>" has been approved.</p>`,
-      }),
-    });
-  }
-}
-
-async function rejectBudget(id: string) {
-  await updateDoc(doc(db, "budgets", id), { status: "rejected" });
-
-  // 🔔 notify requester
-  const b = budgets.find((x) => x.id === id);
-  if (b?.requesterEmail) {
-    await fetch("/api/sendEmail", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        to: b.requesterEmail,
-        subject: "❌ Budget Rejected",
-        html: `<p>Hi ${b.requesterName}, your budget "<b>${b.title}</b>" has been rejected.</p>`,
-      }),
-    });
-  }
-}
-
 async function approveRequest(id: string) {
+  if (processingIds.has(id)) return;
+  setProcessingIds((prev) => new Set(prev).add(id));
   await updateDoc(doc(db, "requests", id), { status: "approved" });
 
-  // 🔔 notify requester
+  setRequests((prev) => prev.filter((r) => r.id !== id)); // ⬅ remove from UI immediately
+
   const r = requests.find((x) => x.id === id);
   if (r?.filedBy) {
     await fetch("/api/sendEmail", {
@@ -191,9 +159,12 @@ async function approveRequest(id: string) {
 }
 
 async function rejectRequest(id: string) {
+  if (processingIds.has(id)) return;
+  setProcessingIds((prev) => new Set(prev).add(id));
   await updateDoc(doc(db, "requests", id), { status: "rejected" });
 
-  // 🔔 notify requester
+  setRequests((prev) => prev.filter((r) => r.id !== id));
+
   const r = requests.find((x) => x.id === id);
   if (r?.filedBy) {
     await fetch("/api/sendEmail", {
@@ -203,6 +174,48 @@ async function rejectRequest(id: string) {
         to: r.filedBy,
         subject: "❌ Request Rejected",
         html: `<p>Hi ${r.employeeName}, your request (<b>${r.type}</b>) has been rejected.</p>`,
+      }),
+    });
+  }
+}
+
+async function approveBudget(id: string) {
+  if (processingIds.has(id)) return;
+  setProcessingIds((prev) => new Set(prev).add(id));
+  await updateDoc(doc(db, "budgets", id), { status: "approved" });
+
+  setBudgets((prev) => prev.filter((b) => b.id !== id));
+
+  const b = budgets.find((x) => x.id === id);
+  if (b?.requesterEmail) {
+    await fetch("/api/sendEmail", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        to: b.requesterEmail,
+        subject: "✅ Budget Approved",
+        html: `<p>Hi ${b.requesterName}, your budget "<b>${b.title}</b>" has been approved.</p>`,
+      }),
+    });
+  }
+}
+
+async function rejectBudget(id: string) {
+  if (processingIds.has(id)) return;
+  setProcessingIds((prev) => new Set(prev).add(id));
+  await updateDoc(doc(db, "budgets", id), { status: "rejected" });
+
+  setBudgets((prev) => prev.filter((b) => b.id !== id));
+
+  const b = budgets.find((x) => x.id === id);
+  if (b?.requesterEmail) {
+    await fetch("/api/sendEmail", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        to: b.requesterEmail,
+        subject: "❌ Budget Rejected",
+        html: `<p>Hi ${b.requesterName}, your budget "<b>${b.title}</b>" has been rejected.</p>`,
       }),
     });
   }
@@ -247,57 +260,75 @@ async function rejectRequest(id: string) {
 {tab === "approvals" && (
   <div className="space-y-8">
     {/* Requests */}
-    <CardPanel
-      title={`Requests (${reqsFiltered.filter((r) => r.status === "pending").length})`}
-      loading={loading}
-    >
-      {reqsFiltered.filter((r) => r.status === "pending").length === 0 ? (
-        <Empty text="No pending requests." />
-      ) : (
-        groupByDate(reqsFiltered.filter((r) => r.status === "pending")).map(
-          ([date, items]) => (
-            <div key={date}>
-              <div className="px-6 py-2 bg-gray-700/50 text-sm font-medium text-gray-300">
-                {date}
-              </div>
-              {items.map((r) => (
+   <CardPanel
+  title={`Requests (${reqsFiltered.filter((r) => r.status === "pending").length})`}
+  loading={loading}
+>
+  {reqsFiltered.filter((r) => r.status === "pending").length === 0 ? (
+    <Empty text="No pending requests." />
+  ) : (
+    <>
+      {(["ob", "ot", "remotework", "wfh", "rdot", "sl", "bl", "vl"] as ReqType[]).map(
+        (t) => {
+          const group = reqsFiltered.filter(
+            (r) => r.status === "pending" && r.type === t
+          );
+          if (group.length === 0) return null;
+          return (
+            <AccordionSection
+              key={t}
+              title={`${t.toUpperCase()} Requests (${group.length})`}
+            >
+              {group.map((r) => (
                 <DetailsView
-              key={r.id}
-              title={r.employeeName}
-              status={r.status}
-              right={
-                <div className="flex gap-2">
-                  <button
-                    onClick={() => navigate(`/approvals/view-request/${r.id}`)}
-                    className="px-3 py-1 text-xs rounded bg-blue-600 hover:bg-blue-500"
-                  >
-                    View
-                  </button>
-                  {canApproveRequest && (
-                    <>
+                  key={r.id}
+                  title={r.employeeName}
+                  status={r.status}
+                  right={
+                    <div className="flex gap-2">
                       <button
-                        onClick={() => approveRequest(r.id)}
-                        className="px-3 py-1 text-xs rounded bg-green-600 hover:bg-green-500"
+                        onClick={() => navigate(`/approvals/view-request/${r.id}`)}
+                        className="px-3 py-1 text-xs rounded bg-blue-600 hover:bg-blue-500"
                       >
-                        Approve
+                        View
                       </button>
-                      <button
-                        onClick={() => rejectRequest(r.id)}
-                        className="px-3 py-1 text-xs rounded bg-red-600 hover:bg-red-500"
-                      >
-                        Reject
-                      </button>
-                    </>
-                  )}
-                </div>
-              }
-            />
+                      {canApproveRequest && (
+                        <>
+                          <button
+                            disabled={processingIds.has(r.id)}
+                            onClick={() => approveRequest(r.id)}
+                            className={`px-3 py-1 text-xs rounded ${
+                              processingIds.has(r.id)
+                                ? "bg-green-800 opacity-50 cursor-not-allowed"
+                                : "bg-green-600 hover:bg-green-500"
+                            }`}
+                          >
+                            Approve
+                          </button>
+                          <button
+                            disabled={processingIds.has(r.id)}
+                            onClick={() => rejectRequest(r.id)}
+                            className={`px-3 py-1 text-xs rounded ${
+                              processingIds.has(r.id)
+                                ? "bg-red-800 opacity-50 cursor-not-allowed"
+                                : "bg-red-600 hover:bg-red-500"
+                            }`}
+                          >
+                            Reject
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  }
+                />
               ))}
-            </div>
-          )
-        )
+            </AccordionSection>
+          );
+        }
       )}
-    </CardPanel>
+    </>
+  )}
+</CardPanel>
 
     {/* Budgets */}
     <CardPanel
@@ -329,17 +360,27 @@ async function rejectRequest(id: string) {
                   {canApproveBudget && (
                     <>
                       <button
-                        onClick={() => approveBudget(b.id)}
-                        className="px-3 py-1 text-xs rounded bg-green-600 hover:bg-green-500"
-                      >
-                        Approve
-                      </button>
-                      <button
-                        onClick={() => rejectBudget(b.id)}
-                        className="px-3 py-1 text-xs rounded bg-red-600 hover:bg-red-500"
-                      >
-                        Reject
-                      </button>
+                            disabled={processingIds.has(b.id)}
+                            onClick={() => approveBudget(b.id)}
+                            className={`px-3 py-1 text-xs rounded ${
+                              processingIds.has(b.id)
+                                ? "bg-green-800 opacity-50 cursor-not-allowed"
+                                : "bg-green-600 hover:bg-green-500"
+                            }`}
+                          >
+                            Approve
+                          </button>
+                          <button
+                            disabled={processingIds.has(b.id)}
+                            onClick={() => rejectBudget(b.id)}
+                            className={`px-3 py-1 text-xs rounded ${
+                              processingIds.has(b.id)
+                                ? "bg-red-800 opacity-50 cursor-not-allowed"
+                                : "bg-red-600 hover:bg-red-500"
+                            }`}
+                          >
+                            Reject
+                          </button>
                     </>
                   )}
                 </div>
@@ -566,6 +607,29 @@ function DetailsView({
     </div>
   );
 }
+
+function AccordionSection({
+  title,
+  children,
+}: {
+  title: string;
+  children: React.ReactNode;
+}) {
+  const [open, setOpen] = useState(true);
+  return (
+    <div className="border-b border-white/10">
+      <button
+        onClick={() => setOpen(!open)}
+        className="w-full flex justify-between items-center px-4 py-2 bg-gray-700/40 hover:bg-gray-700/60 text-sm font-semibold"
+      >
+        <span>{title}</span>
+        <span>{open ? "−" : "+"}</span>
+      </button>
+      {open && <div className="divide-y divide-white/10">{children}</div>}
+    </div>
+  );
+}
+
 
 function Empty({ text }: { text: string }) {
   return <div className="p-10 text-center text-gray-400">{text}</div>;

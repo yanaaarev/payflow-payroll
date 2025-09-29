@@ -62,6 +62,7 @@ type Line = {
   adjustmentsTotal?: number;
   updatedAt?: any;
   _deleted?: boolean;
+  manualCashAdvance?: number; // 👈 NEW - manual override
 };
 
 type CommissionDoc = {
@@ -119,6 +120,7 @@ type FiledRequest = {
   category?: "shoot" | "events" | "ob";
   status: "approved" | "pending" | "rejected";
   employeeName?: string;
+  suggestedRate?: number;
 
   // 👇 always require explicit filed in/out for remote & rdot
   timeIn?: string | null;
@@ -213,6 +215,11 @@ function computeHoursAndDaysForOne(
     return { hours: 0, days: 0 };
   }
 
+  // 🔹 Hard rule: if time-in is 12:00–12:59 → half-day regardless of time-out
+  if (tIn.getHours() === 12) {
+    return { hours: 4, days: 0.5 };
+  }
+
   // --- apply fixed out for interns ---
   let adjustedOut = tOut;
   if (fixedOut) {
@@ -260,6 +267,7 @@ function computeHoursAndDaysForOne(
 
   return { hours, days };
 }
+
 
 /* ========================================================================
    ROLES
@@ -678,6 +686,7 @@ useEffect(() => {
         category: details.categoryKey || details.category || r.category || r.obType || undefined,
         status: "approved",
         employeeName: fullName,
+        suggestedRate: Number(details.suggestedRate ?? r.suggestedRate ?? 0) || undefined,
 
         // ✅ pick up filed in/out (always required for remotework/wfh/rdot)
         timeIn: details.in || r.in || null,
@@ -1300,9 +1309,14 @@ function buildPayrollInput(ln: Line): PayrollInputLike {
 
   // Determine worked days (probationary might have fixed cutoff days)
   let workedDays = Math.max(totalDays, 0.0001);
-  if (meta.fixedWorkedDays && meta.fixedWorkedDays > 0) {
-    workedDays = meta.fixedWorkedDays;
-  }
+
+// ✅ manual override from line.daysWorked
+if (typeof ln.daysWorked === "number" && ln.daysWorked > 0) {
+  workedDays = ln.daysWorked;
+} else if (meta.fixedWorkedDays && meta.fixedWorkedDays > 0) {
+  workedDays = meta.fixedWorkedDays;
+}
+
 
   // Determine base rate strategy:
   const hasPerDay = Number(meta.perDayRate || 0) > 0;
@@ -1311,30 +1325,44 @@ function buildPayrollInput(ln: Line): PayrollInputLike {
     : Number(meta.monthlySalary || ln.monthlySalary || 0);
 
   // OB + OT requests
-  const obQtyReq = reqs.filter(r => r.type === "OB").length;
+  // OB + OT requests
+const obReqs = reqs.filter(r => r.type === "OB");
+const obQtyReq = obReqs.length;
+
+// ✅ compute OB total with rates
+const obPayFromReqs = obReqs.reduce((s, r) => {
+  const rate = Number(r.suggestedRate || meta.rates?.ob || 1500); // fallback if missing
+  return s + rate;
+}, 0);
+
+// Manual adjustments still just count
+const obQtyAdj = Number(ln.adjustments?.OB?.length || 0);
+
+const obQuantity = obQtyReq + obQtyAdj;
+
   const otHrsReq = reqs
     .filter(r => r.type === "OT")
     .reduce((s, r) => s + Number(r.hours || 0), 0);
 
   // Manual adjustments
-  const obQtyAdj = Number(ln.adjustments?.OB?.length || 0);
   const otHrsAdj = (ln.adjustments?.OT || []).reduce(
     (s, a) => s + Number(a.hours || 0),
     0
   );
-
-  const obQuantity = obQtyReq + obQtyAdj;
   const otHours = otHrsReq + otHrsAdj;
 
-  // Cash advances
-  const half = head ? inferCurrentCutoffHalf(head) : "first";
-  const caList = cashAdvances[canonicalName] || [];
-  const totalAmount = caList.reduce(
-    (s, c) => s + Number(c.totalAmount || 0),
-    0
-  );
-  const perCutOff = caList.reduce((s, c) => s + Number(c.perCutOff || 0), 0);
-  const startIsSecond = caList.some(c => c.startDateCutOff === "second");
+// Cash advances
+const half = head ? inferCurrentCutoffHalf(head) : "first";
+const caList = cashAdvances[canonicalName] || [];
+let totalAmount = caList.reduce((s, c) => s + Number(c.totalAmount || 0), 0);
+let perCutOff = caList.reduce((s, c) => s + Number(c.perCutOff || 0), 0);
+const startIsSecond = caList.some(c => c.startDateCutOff === "second");
+
+// ✅ allow finance manual override
+if (typeof ln.manualCashAdvance === "number") {
+  perCutOff = ln.manualCashAdvance;
+  totalAmount = ln.manualCashAdvance; // keep them equal if manual
+}
 
   // Category
   let category: PayrollInputLike["category"];
@@ -1384,13 +1412,13 @@ function buildPayrollInput(ln: Line): PayrollInputLike {
       tardinessMinutes: 0,
       category: "freelancer",
       benefits: { sss: false, philhealth: false, pagibig: false },
-      cashAdvance: {
-        totalAmount: 0,
-        perCutOff: 0,
-        currentCutOff: "first",
-        startDateCutOff: "first",
-        approved: false,
-      },
+     cashAdvance: {
+  totalAmount,
+  perCutOff,
+  currentCutOff: half,
+  startDateCutOff: startIsSecond ? "second" : "first",
+  approved: caList.length > 0,
+},
       manualNetPay: ln.adjustmentsTotal || 0,
     };
   }
@@ -1402,6 +1430,7 @@ function buildPayrollInput(ln: Line): PayrollInputLike {
     cutoffWorkingDays: head?.workedDays || 0,
     workedDays,
     obQuantity,
+    obPayFromReqs, // ✅ new field for OB from requests
     otHours,
     ndHours: 0,
     rdotHours, // ✅ merged
@@ -1421,6 +1450,8 @@ function buildPayrollInput(ln: Line): PayrollInputLike {
       currentCutOff: half,
       startDateCutOff: startIsSecond ? "second" : "first",
       approved: caList.length > 0,
+        // ✅ inject manual override if present
+  override: typeof ln.manualCashAdvance === "number" ? ln.manualCashAdvance : undefined,
     },
   };
 }
@@ -1630,33 +1661,51 @@ const alreadyAdminApproved =
                     </button>
                   </div>
                  <div className="flex items-center gap-4">
-                                 {(() => {
-  const totals = ln.timeInOut.reduce(
-    (acc, r) => {
-      const meta = empMeta[ln.employeeId || ln.id];
-      const c = computeHoursAndDaysForOne(r.in, r.out, meta?.fixedOut);
-      acc.hours += c.hours;
+                                {(() => {
+  const empId = String(ln.employeeId || ln.id).trim();
+  const meta = empMeta[empId];
+  const canonicalName = meta?.name || empId;
+  const reqs = filedRequests[canonicalName] || [];
 
-      // 🔹 Instead of snapping, use the exact computed decimal
-      acc.days += c.days;
-
-      return acc;
-    },
-    { hours: 0, days: 0 }
+  // ✅ use merged helper instead of plain reduce
+  const { totalDays, totalHours } = computeDailyWithFiled(
+    ln.timeInOut,
+    reqs,
+    meta?.fixedOut
   );
 
   return (
     <>
-      <div className="text-sm font-mono text-blue-300">
-        Days: {totals.days.toFixed(3)}
-      </div>
+      <div className="text-sm font-mono text-blue-300 flex items-center gap-2">
+  <span>Days:</span>
+  {canEdit ? (
+    <input
+      type="number"
+      step="0.001"
+      min="0"
+      value={ln.daysWorked?.toFixed(3) ?? totalDays.toFixed(3)}
+      onChange={async (e) => {
+        const val = parseFloat(e.target.value) || 0;
+        await updateDoc(
+          doc(db, "payrollDrafts", draftId!, "lines", ln.id),
+          {
+            daysWorked: val,
+            updatedAt: serverTimestamp(),
+          }
+        );
+      }}
+      className="bg-white/10 border border-white/20 rounded px-2 py-1 text-sm w-24 text-blue-300 font-mono"
+    />
+  ) : (
+    <span>{(ln.daysWorked ?? totalDays).toFixed(3)}</span>
+  )}
+</div>
       <div className="text-sm font-mono text-emerald-300">
-        Hours: {totals.hours.toFixed(2)}
+        Hours: {totalHours.toFixed(2)}
       </div>
     </>
   );
 })()}
-
 
                     <div className="text-sm font-mono text-amber-300">Commission: {peso(comm)}</div>
                     {/* Net pay for ALL employees (not just owners) */}
@@ -1840,31 +1889,44 @@ const alreadyAdminApproved =
 
                       <div className="rounded-xl border border-white/10 p-4 bg-gray-800/30">
                         <h4 className="font-semibold mb-3">Cash Advance</h4>
-                        {(cashAdvances[canonicalName] || []).length ? (
-                          <div className="overflow-x-auto">
-                            <table className="w-full text-sm">
-                              <thead>
-                                <tr className="border-b border-gray-700/60">
-                                  <th className="text-left py-2">Total Amount</th>
-                                  <th className="text-left py-2">Per Cut-off</th>
-                                  <th className="text-left py-2">Start At</th>
-                                  <th className="text-left py-2">Approved</th>
-                                </tr>
-                              </thead>
-                              <tbody>
-                                {(cashAdvances[canonicalName] || []).map((c, i) => (
-                                  <tr key={i} className="border-b border-gray-700/40">
-                                    <td className="py-2">{peso(c.totalAmount)}</td>
-                                    <td className="py-2">{peso(c.perCutOff)}</td>
-                                    <td className="py-2 capitalize">{c.startDateCutOff}</td>
-                                    <td className="py-2">{c.approved ? "Yes" : "No"}</td>
-                                  </tr>
-                                ))}
-                              </tbody>
-                            </table>
+
+                        {canEdit ? (
+                          <div className="flex items-center gap-2">
+                            <label className="text-sm text-gray-300">Manual Input (₱)</label>
+                            <input
+                          type="number"
+                          min="0"
+                          value={ln.manualCashAdvance ?? ""}
+                          onChange={(e) => {
+                            const val = parseFloat(e.target.value) || 0;
+                            // ✅ Update local state immediately so deductions/net pay refresh instantly
+                            setLines((prev) =>
+                              prev.map((l) =>
+                                l.id === ln.id ? { ...l, manualCashAdvance: val } : l
+                              )
+                            );
+                          }}
+                          onBlur={async (e) => {
+                            const val = parseFloat(e.target.value) || 0;
+                            // ✅ Write to Firestore only once, when user leaves input
+                            await updateDoc(
+                              doc(db, "payrollDrafts", draftId!, "lines", ln.id),
+                              {
+                                manualCashAdvance: val,
+                                updatedAt: serverTimestamp(),
+                              }
+                            );
+                          }}
+                          className="bg-white/10 border border-white/20 rounded px-2 py-1 text-sm w-32 text-amber-300 font-mono"
+                        />
+
                           </div>
                         ) : (
-                          <p className="text-gray-500 text-sm">N/A</p>
+                          <p className="text-gray-400 text-sm">
+                            {ln.manualCashAdvance !== undefined
+                              ? peso(ln.manualCashAdvance)
+                              : "N/A"}
+                          </p>
                         )}
                       </div>
                     </div>
