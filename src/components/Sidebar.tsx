@@ -167,25 +167,25 @@ const Sidebar: React.FC = () => {
 
   return (
     <>
-      {/* Toggle Button */}
-      <button
-        ref={openerBtnRef}
-        onClick={() => setOpen((s) => !s)}
-        className="fixed top-4 left-4 z-[70] inline-flex items-center justify-center rounded-md p-2.5 text-white bg-black/40 hover:bg-black/60 lg:hidden"
-        aria-label="Toggle menu"
-      >
-        <FiMenu size={20} />
-      </button>
+     {/* Menu Button (works on all screens) */}
+<button
+  ref={openerBtnRef}
+  onClick={() => setOpen((s) => !s)}
+  className="fixed top-4 left-4 z-[70] inline-flex items-center justify-center rounded-md p-2.5 text-white bg-black/40 hover:bg-black/60"
+  aria-label="Toggle menu"
+>
+  <FiMenu size={20} />
+</button>
 
-        {/* Desktop sidebar */}
+{/* Sidebar (shared for desktop & mobile) */}
 <aside
   className={[
-    "hidden lg:flex fixed top-0 left-0 z-50 h-screen w-64 flex-col bg-[#0f1218]/90 text-white border-r border-white/10 backdrop-blur-md transition-transform duration-200",
-    open ? "translate-x-0" : "-translate-x-full", // ✅ add this
+    "fixed top-0 left-0 z-50 h-screen w-64 lg:w-72 flex-col bg-[#0f1218]/95 text-white border-r border-white/10 backdrop-blur-md transition-transform duration-200",
+    open ? "translate-x-0" : "-translate-x-full",
   ].join(" ")}
 >
   <div className="flex flex-col h-full relative">
-    {/* Close button for desktop */}
+    {/* Close button (optional on desktop since you have FiMenu, but keep for UX) */}
     <button
       onClick={() => setOpen(false)}
       className="absolute top-3 right-3 p-2 rounded-md hover:bg-white/10"
@@ -194,104 +194,62 @@ const Sidebar: React.FC = () => {
       ✕
     </button>
 
-          <div className="px-4 py-5">
-            <div className="text-lg font-semibold">Insta PayFlow</div>
-            <div className="text-xs text-white/60">Payroll System</div>
-          </div>
-          <nav className="flex-1 overflow-y-auto px-2 no-scrollbar">
-            <ul className="space-y-1.5">
-              {nav.map((item) => (
-                <li key={item.href}>
-                  <button
-                    onClick={() => navigate(item.href)}
-                    className={[
-                      "group w-full flex items-center rounded-md px-3 py-2 transition",
-                      isActive(item.href)
-                        ? "bg-white/10 text-white"
-                        : "text-white/80 hover:text-white hover:bg-white/5",
-                    ].join(" ")}
-                  >
-                    <span className="inline-flex h-9 w-9 items-center justify-center rounded-md bg-white/5">
-                      {item.icon}
-                    </span>
-                    <span className="ml-3 text-sm font-medium">{item.label}</span>
-                  </button>
-                </li>
-              ))}
-            </ul>
-          </nav>
-          <div className="px-4 py-4 border-t border-white/10">
-            <div className="mb-2 text-sm">Hi, <span className="font-semibold">{displayName}</span></div>
-            <button
-              onClick={handleLogout}
-              className="w-full flex items-center justify-center gap-2 rounded-md px-3 py-2 text-sm font-medium text-white/90 hover:bg-red-500/20"
-            >
-              <FiLogOut size={18} /> Logout
-            </button>
-          </div>
-        </div>
-      </aside>
+    <div className="px-4 py-5">
+      <div className="text-lg font-semibold">Insta PayFlow</div>
+      <div className="text-xs text-white/60">Payroll System</div>
+    </div>
 
-
-      {/* Mobile drawer */}
-      <aside
-        className={[
-          "lg:hidden fixed top-0 left-0 z-50 h-screen w-72 flex-col bg-[#0f1218]/95 text-white border-r border-white/10 backdrop-blur-md transition-transform duration-200",
-          open ? "translate-x-0" : "-translate-x-full",
-        ].join(" ")}
-      >
-        <div className="flex flex-col h-full">
-          <div className="px-5 py-5">
-            <div className="text-lg font-semibold">Insta PayFlow</div>
-            <div className="text-xs text-white/60">Payroll System</div>
-          </div>
-          <nav className="flex-1 overflow-y-auto px-4 no-scrollbar">
-            <ul className="space-y-1.5">
-              {nav.map((item) => (
-                <li key={item.href}>
-                  <button
-                    onClick={() => {
-                      navigate(item.href);
-                      setOpen(false);
-                    }}
-                    className={[
-                      "group w-full flex items-center rounded-md px-3 py-2 transition",
-                      isActive(item.href)
-                        ? "bg-white/10 text-white"
-                        : "text-white/80 hover:text-white hover:bg-white/5",
-                    ].join(" ")}
-                  >
-                    <span className="inline-flex h-9 w-9 items-center justify-center rounded-md bg-white/5">
-                      {item.icon}
-                    </span>
-                    <span className="ml-3 text-sm font-medium">{item.label}</span>
-                  </button>
-                </li>
-              ))}
-            </ul>
-          </nav>
-          <div className="px-5 py-4 border-t border-white/10">
-            <div className="mb-2 text-sm">Hi, <span className="font-semibold">{displayName}</span></div>
+    <nav className="flex-1 overflow-y-auto px-2 no-scrollbar">
+      <ul className="space-y-1.5">
+        {nav.map((item) => (
+          <li key={item.href}>
             <button
               onClick={() => {
+                navigate(item.href);
                 setOpen(false);
-                handleLogout();
               }}
-              className="w-full flex items-center justify-center gap-2 rounded-md px-3 py-2 text-sm font-medium text-white/90 hover:bg-red-500/20"
+              className={[
+                "group w-full flex items-center rounded-md px-3 py-2 transition",
+                isActive(item.href)
+                  ? "bg-white/10 text-white"
+                  : "text-white/80 hover:text-white hover:bg-white/5",
+              ].join(" ")}
             >
-              <FiLogOut size={18} /> Logout
+              <span className="inline-flex h-9 w-9 items-center justify-center rounded-md bg-white/5">
+                {item.icon}
+              </span>
+              <span className="ml-3 text-sm font-medium">{item.label}</span>
             </button>
-          </div>
-        </div>
-      </aside>
+          </li>
+        ))}
+      </ul>
+    </nav>
 
-      {/* Backdrop for mobile */}
-      {open && (
-        <div
-          className="lg:hidden fixed inset-0 z-40 bg-black/50 backdrop-blur-sm"
-          onClick={() => setOpen(false)}
-        />
-      )}
+    <div className="px-4 py-4 border-t border-white/10">
+      <div className="mb-2 text-sm">
+        Hi, <span className="font-semibold">{displayName}</span>
+      </div>
+      <button
+        onClick={() => {
+          setOpen(false);
+          handleLogout();
+        }}
+        className="w-full flex items-center justify-center gap-2 rounded-md px-3 py-2 text-sm font-medium text-white/90 hover:bg-red-500/20"
+      >
+        <FiLogOut size={18} /> Logout
+      </button>
+    </div>
+  </div>
+</aside>
+
+{/* Backdrop (only shows on mobile screens when open) */}
+{open && (
+  <div
+    className="fixed inset-0 z-40 bg-black/50 backdrop-blur-sm lg:hidden"
+    onClick={() => setOpen(false)}
+  />
+)}
+
 
       <style>{`
         .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
