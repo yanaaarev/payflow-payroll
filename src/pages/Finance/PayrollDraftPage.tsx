@@ -800,6 +800,21 @@ useEffect(() => {
   }).catch(() => {});
 }, [draftId, previewTotals.gross, previewTotals.net, previewTotals.count]);
 
+// 🔹 Utility: deeply remove undefined values
+function removeUndefined(obj: any): any {
+  if (Array.isArray(obj)) {
+    return obj.map(removeUndefined);
+  } else if (obj && typeof obj === "object") {
+    const clean: any = {};
+    for (const [k, v] of Object.entries(obj)) {
+      if (v !== undefined) {
+        clean[k] = removeUndefined(v);
+      }
+    }
+    return clean;
+  }
+  return obj;
+}
 
   async function adminFinalApprove() {
   if (!draftId || !isAdminFinal || !head) return;
@@ -950,11 +965,11 @@ if (employeeEmail) {
         deductions,
 
         // ✅ full details for traceability
-        details: {
+        details: removeUndefined({
           input,
           output: out,
           commissions: comm,
-        },
+        }),
       });
     }
 
