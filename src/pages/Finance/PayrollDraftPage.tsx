@@ -113,13 +113,18 @@ type CashAdvanceEntry = {
 };
 
 type FiledRequest = {
-  type: "OB" | "OT" | "LEAVE" | "REMOTEWORK" | "WFH";
+  type: "OB" | "OT" | "LEAVE" | "REMOTEWORK" | "WFH" | "RDOT";
   date?: string;
   hours?: number;
-  category?: "shoot" | "events" | "ob" | "SHOOT/EVENTS" | "obRates";
+  category?: "shoot" | "events" | "ob";
   status: "approved" | "pending" | "rejected";
   employeeName?: string;
+
+  // 👇 always require explicit filed in/out for remote & rdot
+  timeIn?: string | null;
+  timeOut?: string | null;
 };
+
 
 type PayrollInputLike = Parameters<typeof calculatePayroll>[0];
 
@@ -173,8 +178,12 @@ function normalizeCategory(input?: string | null): NormalizedCategory {
 // Attendance windows & breaks
 const SHIFT_IN = { h: 7, m: 0 };
 const SHIFT_OUT = { h: 17, m: 30 };
+//@ts-ignore
 const IN_MIN = 6 * 60;
+//@ts-ignore
 const IN_MAX = 13 * 60 + 59;
+//@ts-ignore
+const OUT_MIN = 16 * 60;
 
 function clipToShift(timeIn: Date | null, timeOut: Date | null) {
   if (!timeIn || !timeOut) return { start: null as Date | null, end: null as Date | null };
@@ -200,13 +209,9 @@ function computeHoursAndDaysForOne(
 
   const inM = tIn.getHours() * 60 + tIn.getMinutes();
   const outM = tOut.getHours() * 60 + tOut.getMinutes();
-  if (!(inM >= IN_MIN && inM <= IN_MAX)) {
-  return { hours: 0, days: 0 };
-  }
-  if (!outM || outM <= inM) {
+  if (inM < 360 || outM < 420 || outM <= inM) {
     return { hours: 0, days: 0 };
   }
-
 
   // --- apply fixed out for interns ---
   let adjustedOut = tOut;
@@ -223,32 +228,38 @@ function computeHoursAndDaysForOne(
   const { start, end } = clipToShift(tIn, adjustedOut);
   if (!start || !end) return { hours: 0, days: 0 };
 
+  // 🔹 Hard rule: If actual timeout ≤ 1:59 PM → always half-day
+  if (end.getHours() < 13 || (end.getHours() === 13 && end.getMinutes() <= 59)) {
+    return { hours: 4, days: 0.5 };
+  }
+
   let mins = (end.getTime() - start.getTime()) / 60000;
 
-  // Deduct breaks
-  const breaks = [
-    { h1: 12, m1: 0, h2: 13, m2: 0 }, // lunch
-  ];
-  for (const b of breaks) {
-    const bs = new Date(start.getFullYear(), start.getMonth(), start.getDate(), b.h1, b.m1);
-    const be = new Date(start.getFullYear(), start.getMonth(), start.getDate(), b.h2, b.m2);
-    const overlap = Math.max(0, Math.min(end.getTime(), be.getTime()) - Math.max(start.getTime(), bs.getTime())) / 60000;
+  // Deduct lunch only if they worked into it
+  const lunchStart = new Date(start.getFullYear(), start.getMonth(), start.getDate(), 12, 0);
+  const lunchEnd = new Date(start.getFullYear(), start.getMonth(), start.getDate(), 13, 0);
+  if (end > lunchStart) {
+    const overlap =
+      Math.max(0, Math.min(end.getTime(), lunchEnd.getTime()) - Math.max(start.getTime(), lunchStart.getTime())) /
+      60000;
     mins -= overlap;
   }
 
   if (mins < 0) mins = 0;
-  const hours = Math.round((mins / 60) * 100) / 100;
-  let days = hours / 8;
-  days = Math.round(days * 1000) / 1000; // keep up to 3 decimals
 
-  // --- interns rule ---
+  let hours = Math.round((mins / 60) * 100) / 100;
+  if (hours > 8) hours = 8;
+
+  let days = hours / 8;
+  if (days > 1) days = 1;
+
   if (fixedOut) {
-    days = 1; // interns always full day if out matches fixedOut
+    days = 1;
+    hours = 8;
   }
 
   return { hours, days };
 }
-
 
 /* ========================================================================
    ROLES
@@ -627,43 +638,51 @@ useEffect(() => {
   /* ------------------------------------------------------------
    FETCH: FILED REQUESTS (APPROVED, WITHIN CUTOFF)
    ------------------------------------------------------------ */
-useEffect(() => {
-  (async () => {
-    if (!head || !head.cutoffStart || !head.cutoffEnd || !lines.length) return;
-    const start = new Date(head.cutoffStart);
-    const end = new Date(head.cutoffEnd);
+    useEffect(() => {
+      (async () => {
+        if (!head || !head.cutoffStart || !head.cutoffEnd || !lines.length) return;
+        const start = new Date(head.cutoffStart);
+        const end = new Date(head.cutoffEnd);
 
-    try {
-      const qRef = query(collection(db, "requests"), where("status", "==", "approved"));
-      const snap = await getDocs(qRef);
-      const map: Record<string, FiledRequest[]> = {};
+        // ✅ move end to 23:59:59
+        end.setHours(23, 59, 59, 999);
 
-      snap.forEach((d) => {
-        const r = d.data() as any;
-        const details = r.details || {}; // ✅ wrapper fallback
-        const fullName = String(r.employeeName || r.name || "").trim();
-        if (!fullName) return;
 
-        // ✅ date comes from details first
-        const dtStr: string | undefined = details.date || r.date || r.filedDate;
-        if (dtStr) {
-          const dt = new Date(dtStr);
-          if (isNaN(dt.getTime()) || dt < start || dt > end) return;
-        }
+        try {
+          const qRef = query(collection(db, "requests"), where("status", "==", "approved"));
+          const snap = await getDocs(qRef);
+          const map: Record<string, FiledRequest[]> = {};
+
+          snap.forEach((d) => {
+            const r = d.data() as any;
+            const details = r.details || {}; // ✅ wrapper fallback
+            const fullName = String(r.employeeName || r.name || "").trim();
+            if (!fullName) return;
+
+            // ✅ date comes from details first
+            const dtStr: string | undefined = details.date || r.date || r.filedDate;
+            if (dtStr) {
+      const dt = new Date(dtStr);
+
+      // ✅ End date must be INCLUDED (<= end)
+      if (isNaN(dt.getTime()) || dt < start || dt > new Date(end.getTime() + 24 * 60 * 60 * 1000 - 1)) {
+        return;
+      }
+    }
+
 
         const fr: FiledRequest = {
-        type: (r.type || details.type || "").toUpperCase(),
+        type: (r.type || details.type || details.kind || "OB").toUpperCase(),
         date: dtStr,
         hours: Number(details.hours ?? r.hours ?? 0),
-        category: details.categoryKey || details.category || r.category,
+        category: details.categoryKey || details.category || r.category || r.obType || undefined,
         status: "approved",
         employeeName: fullName,
-      };
 
-      // ✅ Normalize remote work
-      if (["WFH", "REMOTEWORK"].includes(fr.type)) {
-        fr.type = "WFH";
-      }
+        // ✅ pick up filed in/out (always required for remotework/wfh/rdot)
+        timeIn: details.in || r.in || null,
+        timeOut: details.out || r.out || null,
+      };
 
 
         if (!map[fullName]) map[fullName] = [];
@@ -980,7 +999,8 @@ if (employeeEmail) {
     const newOut = editRow.out ? toISOTAt(row.date, editRow.out) : null;
     newArr[index] = { ...row, in: newIn, out: newOut };
 
-    let h = 0;
+// inside saveDayEdit
+let h = 0;
 let d = 0;
 newArr.forEach((r) => {
   const meta = empMeta[lineId];
@@ -989,22 +1009,27 @@ newArr.forEach((r) => {
 
   let daily = c.days;
 
-  // ✅ interns always count as whole days if they have in+out
+  // ✅ interns always full day if they have in+out
   if (meta?.fixedOut) {
-    if (r.in && r.out) {
-      daily = 1;
-    } else {
-      daily = 0;
-    }
+    daily = r.in && r.out ? 1 : 0;
   } else {
-    // snap fractions for non-interns
-    if (c.days >= 0.75 && c.days < 1.25) daily = 1;
-    else if (c.days >= 0.25 && c.days < 0.75) daily = 0.5;
-    else if (c.days < 0.25) daily = 0;
-    else daily = Math.round(c.days * 2) / 2;
+    // ✅ snap fractions: 0, 0.5, 1 only
+    if (c.days >= 0.75) daily = 1;
+    else if (c.days >= 0.25) daily = 0.5;
+    else daily = 0;
   }
 
   d += daily;
+});
+
+h = Math.round(h * 100) / 100;
+d = Math.round(d * 1000) / 1000;
+
+await updateDoc(doc(db, "payrollDrafts", draftId, "lines", lineId), {
+  timeInOut: newArr,
+  hoursWorked: h,
+  daysWorked: d,
+  updatedAt: serverTimestamp(),
 });
 
 h = Math.round(h * 100) / 100;
@@ -1025,23 +1050,24 @@ d = Math.round(d * 1000) / 1000;
     if (!line) return;
     const newArr = line.timeInOut.filter((_, i) => i !== index);
 
-    let h = 0;
-    let d = 0;
-    newArr.forEach((r) => {
-      const meta = empMeta[lineId];
-      const c = computeHoursAndDaysForOne(r.in, r.out, meta?.fixedOut);
-      h += c.hours;
-      d += c.days;
-    });
-    h = Math.round(h * 100) / 100;
-    d = Math.round(d * 1000) / 1000;
+   let h = 0;
+let d = 0;
+newArr.forEach((r) => {
+  const meta = empMeta[lineId];
+  const c = computeHoursAndDaysForOne(r.in, r.out, meta?.fixedOut);
+  h += c.hours;
 
-    await updateDoc(doc(db, "payrollDrafts", draftId, "lines", lineId), {
-      timeInOut: newArr,
-      hoursWorked: h,
-      daysWorked: d,
-      updatedAt: serverTimestamp(),
-    });
+  let daily = c.days;
+  if (meta?.fixedOut) {
+    daily = r.in && r.out ? 1 : 0;
+  } else {
+    if (c.days >= 0.75) daily = 1;
+    else if (c.days >= 0.25) daily = 0.5;
+    else daily = 0;
+  }
+
+  d += daily;
+});
   }
 
   // Commission modal helpers
@@ -1169,27 +1195,113 @@ const updateCommField = (id: string, field: keyof CommRow, v: string) => {
   setShowFPModal(false);
 }
 
-  /* ------------------------------------------------------------
+/* ------------------------------------------------------------
+   DAILY MERGE HELPER
+   biometric + filed RemoteWork/WFH + RDOT
+   ------------------------------------------------------------ */
+function computeDailyWithFiled(
+  timeInOut: TimeInOut[],
+  reqs: FiledRequest[],
+  fixedOut?: string | null
+) {
+  const allDates = new Set<string>([
+    ...timeInOut.map(r => r.date),
+    ...reqs
+      .filter(r =>
+        ["remotework", "wfh", "rdot"].includes(r.type?.toLowerCase() || "")
+      )
+      .map(r => r.date || "")
+  ]);
+
+  let totalHours = 0;
+  let totalDays = 0;
+  let rdotHours = 0;
+
+  for (const d of Array.from(allDates)) {
+    if (!d) continue;
+    let dailyHours = 0;
+
+    // biometric for this date
+    const bio = timeInOut.find(r => r.date === d);
+    if (bio) {
+      const { hours } = computeHoursAndDaysForOne(bio.in, bio.out, fixedOut);
+      dailyHours += hours;
+    }
+
+    // filed remote/wfh for this date
+    const remotes = reqs.filter(
+      r =>
+        ["remotework", "wfh"].includes(r.type?.toLowerCase() || "") &&
+        r.date === d
+    );
+    for (const rw of remotes) {
+      if ((rw as any).timeIn && (rw as any).timeOut) {
+        const { hours } = computeHoursAndDaysForOne(
+          (rw as any).timeIn,
+          (rw as any).timeOut,
+          fixedOut
+        );
+        dailyHours += hours;
+      } else {
+        dailyHours += Number(rw.hours || 0);
+      }
+    }
+
+    // filed rdot for this date
+    const rdots = reqs.filter(
+      r => r.type?.toLowerCase() === "rdot" && r.date === d
+    );
+    for (const rd of rdots) {
+      if ((rd as any).timeIn && (rd as any).timeOut) {
+        const { hours } = computeHoursAndDaysForOne(
+          (rd as any).timeIn,
+          (rd as any).timeOut,
+          fixedOut
+        );
+        rdotHours += hours;
+      } else {
+        rdotHours += Number(rd.hours || 0);
+      }
+    }
+
+    // ✅ cap total worked at 8h/day
+    if (dailyHours > 8) dailyHours = 8;
+
+    totalHours += dailyHours;
+    totalDays += Math.round((dailyHours / 8) * 1000) / 1000;
+  }
+
+  return { totalHours, totalDays, rdotHours };
+}
+
+/* ------------------------------------------------------------
    BUILD PAYROLL INPUT FOR payrollLogic
    ------------------------------------------------------------ */
 function buildPayrollInput(ln: Line): PayrollInputLike {
   const empId = String(ln.employeeId || ln.id).trim();
   const meta =
-    empMeta[empId] ||
-    ({
+    empMeta[empId] || {
       name: "",
       category: normalizeCategory(ln.category),
       monthlySalary: 0,
       perDayRate: 0,
-      fixedWorkedDays: 0,   // ✅ ensure default if missing
-    } as const);
+      fixedWorkedDays: 0,
+    };
 
   const canonicalName = meta.name || empId;
+  const reqs = filedRequests[canonicalName] || [];
+
+  // --- DAILY MERGE ---
+  const { totalDays, rdotHours } = computeDailyWithFiled(
+    ln.timeInOut,
+    reqs,
+    meta.fixedOut
+  );
 
   // Determine worked days (probationary might have fixed cutoff days)
-  let workedDays = Math.max(ln.daysWorked || 0, 0.0001);
+  let workedDays = Math.max(totalDays, 0.0001);
   if (meta.fixedWorkedDays && meta.fixedWorkedDays > 0) {
-    workedDays = meta.fixedWorkedDays;   // ✅ override if present
+    workedDays = meta.fixedWorkedDays;
   }
 
   // Determine base rate strategy:
@@ -1198,37 +1310,33 @@ function buildPayrollInput(ln: Line): PayrollInputLike {
     ? Number(meta.perDayRate) * 22 * 2
     : Number(meta.monthlySalary || ln.monthlySalary || 0);
 
-  // Filed requests (approved) keyed by canonical full name
-  const reqs = filedRequests[canonicalName] || [];
-  const obQtyReq = reqs.filter((r) => r.type === "OB").length;
-  const otHrsReq = reqs.filter((r) => r.type === "OT").reduce((s, r) => s + Number(r.hours || 0), 0);
+  // OB + OT requests
+  const obQtyReq = reqs.filter(r => r.type === "OB").length;
+  const otHrsReq = reqs
+    .filter(r => r.type === "OT")
+    .reduce((s, r) => s + Number(r.hours || 0), 0);
 
-  // ✅ NEW: Count Remote Work / WFH as worked days
-const remoteWorkDays = reqs.filter(
-  (r) =>
-    r.type?.toLowerCase() === "remotework" ||
-    r.type?.toLowerCase() === "wfh"
-).length;
-
-// ✅ Add to workedDays so they’re treated as paid days
-workedDays += remoteWorkDays;
-
-
-  // Manual adjustments on the line
+  // Manual adjustments
   const obQtyAdj = Number(ln.adjustments?.OB?.length || 0);
-  const otHrsAdj = (ln.adjustments?.OT || []).reduce((s, a) => s + Number(a.hours || 0), 0);
+  const otHrsAdj = (ln.adjustments?.OT || []).reduce(
+    (s, a) => s + Number(a.hours || 0),
+    0
+  );
 
   const obQuantity = obQtyReq + obQtyAdj;
   const otHours = otHrsReq + otHrsAdj;
 
-  // Cash advances by canonical name
+  // Cash advances
   const half = head ? inferCurrentCutoffHalf(head) : "first";
   const caList = cashAdvances[canonicalName] || [];
-  const totalAmount = caList.reduce((s, c) => s + Number(c.totalAmount || 0), 0);
+  const totalAmount = caList.reduce(
+    (s, c) => s + Number(c.totalAmount || 0),
+    0
+  );
   const perCutOff = caList.reduce((s, c) => s + Number(c.perCutOff || 0), 0);
-  const startIsSecond = caList.some((c) => c.startDateCutOff === "second");
+  const startIsSecond = caList.some(c => c.startDateCutOff === "second");
 
-  // CRITICAL: pass a category that payrollLogic understands
+  // Category
   let category: PayrollInputLike["category"];
   if (meta.category === "core_probationary") {
     category = "core_probationary";
@@ -1242,81 +1350,80 @@ workedDays += remoteWorkDays;
     category = "core";
   }
 
- // --- TARDINESS COMPUTATION ---
-// ✅ Only count minutes if IN is strictly between 07:01–07:59
-let tardyMins = 0;
-ln.timeInOut.forEach((r) => {
-  if (r.in) {
-    const tIn = new Date(r.in);
-    const mins = tIn.getHours() * 60 + tIn.getMinutes();
+  // --- TARDINESS COMPUTATION ---
+  let tardyMins = 0;
+  ln.timeInOut.forEach(r => {
+    if (r.in) {
+      const tIn = new Date(r.in);
+      const mins = tIn.getHours() * 60 + tIn.getMinutes();
+      const startWindow = 7 * 60; // 07:00
+      const endWindow = 8 * 60; // 08:00
 
-    const startWindow = 7 * 60;   // 07:00 → 420
-    const endWindow = 8 * 60;     // 08:00 → 480
-
-    if (mins > startWindow && mins < endWindow) {
-      // ✅ late within 7:01–7:59
-      tardyMins += mins - startWindow;
-    } else if (mins >= endWindow) {
-      // ✅ 08:00+ → no tardiness, daysWorked will absorb it
-      return;
+      if (mins > startWindow && mins < endWindow) {
+        tardyMins += mins - startWindow;
+      } else if (mins >= endWindow) {
+        return;
+      }
     }
-  }
-});
+  });
 
-if (category === "freelancer") {
+  // --- FREELANCER SHORT CIRCUIT ---
+  if (category === "freelancer") {
+    return {
+      monthlySalary: 0,
+      perDayRate: 0,
+      cutoffWorkingDays: 0,
+      workedDays: 0,
+      obQuantity: 0,
+      otHours: 0,
+      ndHours: 0,
+      rdotHours: 0,
+      holiday30Hours: 0,
+      holidayDoubleHours: 0,
+      holidayOtDoubleHours: 0,
+      tardinessMinutes: 0,
+      category: "freelancer",
+      benefits: { sss: false, philhealth: false, pagibig: false },
+      cashAdvance: {
+        totalAmount: 0,
+        perCutOff: 0,
+        currentCutOff: "first",
+        startDateCutOff: "first",
+        approved: false,
+      },
+      manualNetPay: ln.adjustmentsTotal || 0,
+    };
+  }
+
+  // --- NORMAL EMPLOYEES ---
   return {
-    monthlySalary: 0,
-    perDayRate: 0,
-    cutoffWorkingDays: 0,
-    workedDays: 0,
-    obQuantity: 0,
-    otHours: 0,
+    monthlySalary: normalizedMonthly,
+    perDayRate: meta.perDayRate,
+    cutoffWorkingDays: head?.workedDays || 0,
+    workedDays,
+    obQuantity,
+    otHours,
     ndHours: 0,
-    rdotHours: 0,
+    rdotHours, // ✅ merged
     holiday30Hours: 0,
     holidayDoubleHours: 0,
     holidayOtDoubleHours: 0,
-    tardinessMinutes: 0,
-    category: "freelancer",
-    benefits: { sss: false, philhealth: false, pagibig: false },
-    cashAdvance: { totalAmount: 0, perCutOff: 0, currentCutOff: "first", startDateCutOff: "first", approved: false },
-
-    // 👇 this makes payrollLogic return netPay = adjustmentsTotal
-    manualNetPay: ln.adjustmentsTotal || 0,
+    tardinessMinutes: tardyMins,
+    category,
+    benefits: {
+      sss: meta.sss || false,
+      philhealth: meta.philhealth || false,
+      pagibig: meta.pagibig || false,
+    },
+    cashAdvance: {
+      totalAmount,
+      perCutOff,
+      currentCutOff: half,
+      startDateCutOff: startIsSecond ? "second" : "first",
+      approved: caList.length > 0,
+    },
   };
 }
-
-  return {
-  monthlySalary: normalizedMonthly,
-  perDayRate: meta.perDayRate,
-  cutoffWorkingDays: head?.workedDays || 0,
-  workedDays,
-  obQuantity,
-  otHours,
-  ndHours: 0,
-  rdotHours: 0,
-  holiday30Hours: 0,
-  holidayDoubleHours: 0,
-  holidayOtDoubleHours: 0,
-  tardinessMinutes: tardyMins,
-  category,
-
-  // ✅ benefits go here, not inside cashAdvance
-  benefits: {
-    sss: meta.sss || false,
-    philhealth: meta.philhealth || false,
-    pagibig: meta.pagibig || false,
-  },
-
-  cashAdvance: {
-    totalAmount,
-    perCutOff,
-    currentCutOff: half,
-    startDateCutOff: startIsSecond ? "second" : "first",
-    approved: caList.length > 0,
-  },
-};
-  }
 
 const uid = getAuth().currentUser?.uid || "";
 
@@ -1523,8 +1630,34 @@ const alreadyAdminApproved =
                     </button>
                   </div>
                  <div className="flex items-center gap-4">
-                    <div className="text-sm font-mono text-blue-300">Days: {ln.daysWorked.toFixed(3)}</div>
-                    <div className="text-sm font-mono text-emerald-300">Hours: {ln.hoursWorked.toFixed(2)}</div>
+                                 {(() => {
+  const totals = ln.timeInOut.reduce(
+    (acc, r) => {
+      const meta = empMeta[ln.employeeId || ln.id];
+      const c = computeHoursAndDaysForOne(r.in, r.out, meta?.fixedOut);
+      acc.hours += c.hours;
+
+      // 🔹 Instead of snapping, use the exact computed decimal
+      acc.days += c.days;
+
+      return acc;
+    },
+    { hours: 0, days: 0 }
+  );
+
+  return (
+    <>
+      <div className="text-sm font-mono text-blue-300">
+        Days: {totals.days.toFixed(3)}
+      </div>
+      <div className="text-sm font-mono text-emerald-300">
+        Hours: {totals.hours.toFixed(2)}
+      </div>
+    </>
+  );
+})()}
+
+
                     <div className="text-sm font-mono text-amber-300">Commission: {peso(comm)}</div>
                     {/* Net pay for ALL employees (not just owners) */}
                     <div className="text-sm font-semibold text-green-400">Net: {peso((p.netPay || 0) + comm)}</div>
