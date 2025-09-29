@@ -113,10 +113,10 @@ type CashAdvanceEntry = {
 };
 
 type FiledRequest = {
-  type: "OB" | "OT" | "LEAVE";
+  type: "OB" | "OT" | "LEAVE" | "REMOTEWORK" | "WFH";
   date?: string;
   hours?: number;
-  category?: "shoot" | "events" | "ob";
+  category?: "shoot" | "events" | "ob" | "SHOOT/EVENTS" | "obRates";
   status: "approved" | "pending" | "rejected";
   employeeName?: string;
 };
@@ -175,7 +175,6 @@ const SHIFT_IN = { h: 7, m: 0 };
 const SHIFT_OUT = { h: 17, m: 30 };
 const IN_MIN = 6 * 60;
 const IN_MAX = 13 * 60 + 59;
-const OUT_MIN = 16 * 60;
 
 function clipToShift(timeIn: Date | null, timeOut: Date | null) {
   if (!timeIn || !timeOut) return { start: null as Date | null, end: null as Date | null };
@@ -201,9 +200,13 @@ function computeHoursAndDaysForOne(
 
   const inM = tIn.getHours() * 60 + tIn.getMinutes();
   const outM = tOut.getHours() * 60 + tOut.getMinutes();
-  if (!(inM >= IN_MIN && inM <= IN_MAX) || !(outM >= OUT_MIN)) {
+  if (!(inM >= IN_MIN && inM <= IN_MAX)) {
+  return { hours: 0, days: 0 };
+  }
+  if (!outM || outM <= inM) {
     return { hours: 0, days: 0 };
   }
+
 
   // --- apply fixed out for interns ---
   let adjustedOut = tOut;
@@ -236,12 +239,7 @@ function computeHoursAndDaysForOne(
   if (mins < 0) mins = 0;
   const hours = Math.round((mins / 60) * 100) / 100;
   let days = hours / 8;
-
-  // --- snap strictly ---
-  if (days >= 0.75 && days < 1.25) days = 1;
-  else if (days >= 0.25 && days < 0.75) days = 0.5;
-  else if (days < 0.25) days = 0;
-  else days = Math.round(days * 2) / 2; // allow 1.5, 2.0, etc
+  days = Math.round(days * 1000) / 1000; // keep up to 3 decimals
 
   // --- interns rule ---
   if (fixedOut) {
@@ -654,13 +652,19 @@ useEffect(() => {
         }
 
         const fr: FiledRequest = {
-          type: (r.type || details.type || details.kind || "OB").toUpperCase(),
-          date: dtStr,
-          hours: Number(details.hours ?? r.hours ?? 0),
-          category: details.categoryKey || details.category || r.category || r.obType || undefined,
-          status: "approved",
-          employeeName: fullName,
-        };
+        type: (r.type || details.type || "").toUpperCase(),
+        date: dtStr,
+        hours: Number(details.hours ?? r.hours ?? 0),
+        category: details.categoryKey || details.category || r.category,
+        status: "approved",
+        employeeName: fullName,
+      };
+
+      // ✅ Normalize remote work
+      if (["WFH", "REMOTEWORK"].includes(fr.type)) {
+        fr.type = "WFH";
+      }
+
 
         if (!map[fullName]) map[fullName] = [];
         map[fullName].push(fr);
