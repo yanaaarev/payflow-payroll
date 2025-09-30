@@ -208,14 +208,15 @@ export default function MyPayslipsPage() {
                   existing.note = r.type; // just the type
                 } else {
                   mine.push({
-                  date: dateStr,
-                  type: (r.type || "").toUpperCase(), // keep for display
-                  timeIn: r.timeIn || "",
-                  timeOut: r.timeOut || "",
-                  hoursWorked: r.hours || 8,
-                  daysWorked: 1,
-                });
+                    date: dateStr,
+                    timeIn: r.timeIn || r.type,
+                    timeOut: r.timeOut || r.type,
+                    hoursWorked: r.hours || 8,
+                    daysWorked: 1,
+                    note: r.type, // just the type
+                  });
                 }
+
               }
             }
           });
@@ -535,18 +536,26 @@ function PayslipModal({
                         hoursOrDays = Number(l?.hoursWorked || 0).toFixed(2);
                       }
 
-                     const inLabel = l?.timeIn
-                        ? l.timeIn
-                        : <span className="text-red-600 font-bold">NO IN</span>;
-
-                      const outLabel = l?.timeOut
-                        ? l.timeOut
-                        : <span className="text-red-600 font-bold">NO OUT</span>;
+                      const inLabel =
+                        l?.timeIn && l.timeIn !== "wfh"
+                          ? new Date(l.timeIn).toLocaleTimeString()
+                          : l?.timeIn === "wfh"
+                          ? "wfh"
+                          : <span className="text-red-600 font-bold">NO IN</span>;
+                      const outLabel =
+                        l?.timeOut && l.timeOut !== "wfh"
+                          ? new Date(l.timeOut).toLocaleTimeString()
+                          : l?.timeOut === "wfh"
+                          ? "wfh"
+                          : <span className="text-red-600 font-bold">NO OUT</span>;
 
                       return (
                         <tr key={i} className="border-b border-black">
-                       <td className="p-2 border-r border-black">
-                        {l.date} {l.type ? l.type : ""}
+                                                <td className="p-2 border-r border-black">
+                        {new Date(l.date).toLocaleDateString("en-US")} {/* MM/DD/YYYY */}
+                        {l?.note && (
+                          <div className="text-[10px] text-gray-600">{l.note}</div>
+                        )}
                       </td>
                           <td className="p-2 border-r border-black">{inLabel}</td>
                           <td className="p-2 border-r border-black">{outLabel}</td>

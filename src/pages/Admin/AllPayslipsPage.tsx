@@ -194,22 +194,22 @@ reqSnap.forEach((d) => {
   const reqDate = new Date(r.date).toLocaleDateString("en-US"); // format date MM/DD/YYYY
   const existing = mine.find((it: any) => new Date(it.date).toLocaleDateString("en-US") === reqDate);
 
-  const type = (r.type || "").toUpperCase();
+  const note = `${r.type} • filedAt: ${toDate(r.filedAt)?.toLocaleString() || ""}`;
 
-if (existing) {
-  existing.timeIn = r.timeIn || existing.timeIn || "";
-  existing.timeOut = r.timeOut || existing.timeOut || "";
-  existing.type = type;
-} else {
-  mine.push({
-    date: r.date,
-    type,
-    timeIn: r.timeIn || "",
-    timeOut: r.timeOut || "",
-    hoursWorked: r.hours || 8,
-    daysWorked: 1,
-  });
-}
+  if (existing) {
+    if (!existing.timeIn) existing.timeIn = r.timeIn || "wfh";
+    if (!existing.timeOut) existing.timeOut = r.timeOut || "wfh";
+    existing.note = note;
+  } else {
+    mine.push({
+      date: r.date,
+      timeIn: r.timeIn || "wfh",
+      timeOut: r.timeOut || "wfh",
+      hoursWorked: r.hours || 8,
+      daysWorked: 1,
+      note,
+    });
+  }
 });
         // merge filed remotework/wfh
         const filed = (p.details?.filedRequests || []).filter((f) =>
@@ -601,18 +601,19 @@ function PayslipModal({
                       }
 
                       const inLabel = l?.timeIn
-                        ? l.timeIn
+                        ? new Date(l.timeIn).toLocaleTimeString()
                         : <span className="text-red-600 font-bold">NO IN</span>;
-                        const outLabel = l?.timeOut
-                        ? l.timeOut
+                      const outLabel = l?.timeOut
+                        ? new Date(l.timeOut).toLocaleTimeString()
                         : <span className="text-red-600 font-bold">NO OUT</span>;
-
 
                       return (
                         <tr key={i} className="border-b border-black">
-                         <td className="p-2 border-r border-black">
-                        {l?.date ? new Date(l.date).toLocaleDateString("en-US", { year: "2-digit" }) : ""}
-                        {l?.type ? ` ${l.type}` : ""}
+                          <td className="p-2 border-r border-black">
+                        {l?.date ? new Date(l.date).toLocaleDateString("en-US") : ""}
+                        {l?.note && (
+                            <div className="text-[10px] text-gray-600">{l.note}</div>
+                        )}
                         </td>
                           <td className="p-2 border-r border-black">{inLabel}</td>
                           <td className="p-2 border-r border-black">{outLabel}</td>
