@@ -333,15 +333,17 @@ reqSnap.forEach((d) => {
         <div className="rounded-2xl border border-white/10 bg-gray-800/40 overflow-hidden">
           <div className="px-4 sm:px-6 py-4 border-b border-white/10 flex items-center justify-between">
             <div className="text-lg font-semibold">Available Payslips</div>
-            {role === "admin_final" && filtered.length > 0 && (
-                <button
-                onClick={() => publishAllPayslips(filtered)}
-                className="px-3 sm:px-4 py-2 rounded-xl bg-green-700 hover:bg-green-600 text-sm"
-                >
-                Publish All
-                </button>
-            )}
-            </div>
+            {role === "admin_final" &&
+                filtered.length > 0 &&
+                filtered.some((p) => p.status !== "ready") && (
+                    <button
+                    onClick={() => publishAllPayslips(filtered.filter((p) => p.status !== "ready"))}
+                    className="px-3 sm:px-4 py-2 rounded-xl bg-green-700 hover:bg-green-600 text-sm"
+                    >
+                    Publish All
+                    </button>
+                )}
+                            </div>
 
 
           {loading ? (
@@ -371,22 +373,23 @@ reqSnap.forEach((d) => {
                       >
                         View / Download
                       </button>
-                      {role === "admin_final" && (
-                        <>
-                          <button
-                            onClick={() => publishPayslip(p)}
-                            className="px-3 sm:px-4 py-2 rounded-xl bg-green-600 hover:bg-green-500 text-sm"
-                          >
-                            Publish
-                          </button>
-                          <button
-                            onClick={() => rejectPayslip(p)}
-                            className="px-3 sm:px-4 py-2 rounded-xl bg-red-600 hover:bg-red-500 text-sm"
-                          >
-                            Reject
-                          </button>
-                        </>
-                      )}
+                     {role === "admin_final" && p.status !== "ready" && (
+                            <>
+                                <button
+                                onClick={() => publishPayslip(p)}
+                                className="px-3 sm:px-4 py-2 rounded-xl bg-green-600 hover:bg-green-500 text-sm"
+                                >
+                                Publish
+                                </button>
+                                <button
+                                onClick={() => rejectPayslip(p)}
+                                className="px-3 sm:px-4 py-2 rounded-xl bg-red-600 hover:bg-red-500 text-sm"
+                                >
+                                Reject
+                                </button>
+                            </>
+                            )}
+
                     </div>
                   </div>
                 );
