@@ -21,7 +21,7 @@ type MoneyRow = {
 };
 
 type FiledRequest = {
-  type: string; // REMOTEWORK or WFH
+  type: string; // remotework or wfh
   date: string;
   filedAt?: any;
 };
@@ -183,7 +183,45 @@ export default function MyPayslipsPage() {
           (it: any) => String(it?.name || "").toLowerCase() === empAlias
         );
 
-        // 🔗 Merge filed RemoteWork/WFH
+        // 🔗 Fetch filed requests (remotework/wfh) directly from /requests
+        if (p.employeeId && p.cutoffStart && p.cutoffEnd) {
+          const reqRef = collection(db, "requests");
+          const reqSnap = await getDocs(
+            query(
+              reqRef,
+              where("details.employeeId", "==", p.employeeId),
+              where("details.status", "==", "approved")
+            )
+          );
+
+          reqSnap.forEach((d) => {
+            const r = d.data().details;
+            const filedDate = new Date(r.date);
+            if (filedDate >= toDate(p.cutoffStart)! && filedDate <= toDate(p.cutoffEnd)!) {
+              if (["remotework", "wfh"].includes((r.type || "").toLowerCase())) {
+                const dateStr = new Date(r.date).toLocaleDateString("en-US"); // ✅ MM/DD/YYYY
+                const existing = mine.find((it: any) => it.date === dateStr);
+
+                if (existing) {
+                  existing.timeIn = r.timeIn || "wfh";
+                  existing.timeOut = r.timeOut || "wfh";
+                  existing.note = `${r.type} • filedAt: ${toDate(r.filedAt)?.toLocaleString() || ""}`;
+                } else {
+                  mine.push({
+                    date: dateStr,
+                    timeIn: r.timeIn || "wfh",
+                    timeOut: r.timeOut || "wfh",
+                    hoursWorked: r.hours || 8,
+                    daysWorked: 1,
+                    note: `${r.type} • filedAt: ${toDate(r.filedAt)?.toLocaleString() || ""}`,
+                  });
+                }
+              }
+            }
+          });
+        }
+
+        // 🔗 Merge filed remotework/wfh
         const filed = (p.details?.filedRequests || []).filter((f) =>
           ["remotework", "wfh"].includes((f.type || "").toLowerCase())
         );
@@ -192,14 +230,14 @@ export default function MyPayslipsPage() {
           const dateStr = f.date;
           const existing = mine.find((it: any) => it.date === dateStr);
           if (existing) {
-            if (!existing.timeIn) existing.timeIn = "WFH";
-            if (!existing.timeOut) existing.timeOut = "WFH";
+            if (!existing.timeIn) existing.timeIn = "wfh";
+            if (!existing.timeOut) existing.timeOut = "wfh";
             existing.note = `${f.type} • filedAt: ${toDate(f.filedAt)?.toLocaleString() || ""}`;
           } else {
             mine.push({
               date: dateStr,
-              timeIn: "WFH",
-              timeOut: "WFH",
+              timeIn: "wfh",
+              timeOut: "wfh",
               hoursWorked: 8,
               daysWorked: 1,
               note: `${f.type} • filedAt: ${toDate(f.filedAt)?.toLocaleString() || ""}`,
@@ -498,26 +536,26 @@ function PayslipModal({
                       }
 
                       const inLabel =
-                        l?.timeIn && l.timeIn !== "WFH"
+                        l?.timeIn && l.timeIn !== "wfh"
                           ? new Date(l.timeIn).toLocaleTimeString()
-                          : l?.timeIn === "WFH"
-                          ? "WFH"
+                          : l?.timeIn === "wfh"
+                          ? "wfh"
                           : <span className="text-red-600 font-bold">NO IN</span>;
                       const outLabel =
-                        l?.timeOut && l.timeOut !== "WFH"
+                        l?.timeOut && l.timeOut !== "wfh"
                           ? new Date(l.timeOut).toLocaleTimeString()
-                          : l?.timeOut === "WFH"
-                          ? "WFH"
+                          : l?.timeOut === "wfh"
+                          ? "wfh"
                           : <span className="text-red-600 font-bold">NO OUT</span>;
 
                       return (
                         <tr key={i} className="border-b border-black">
-                          <td className="p-2 border-r border-black">
-                            {l?.date || ""}
-                            {l?.note && (
-                              <div className="text-[10px] text-gray-600">{l.note}</div>
-                            )}
-                          </td>
+                                                <td className="p-2 border-r border-black">
+                        {new Date(l.date).toLocaleDateString("en-US")} {/* MM/DD/YYYY */}
+                        {l?.note && (
+                          <div className="text-[10px] text-gray-600">{l.note}</div>
+                        )}
+                      </td>
                           <td className="p-2 border-r border-black">{inLabel}</td>
                           <td className="p-2 border-r border-black">{outLabel}</td>
                           <td className="p-2 border-r border-black text-right">{hoursOrDays}</td>

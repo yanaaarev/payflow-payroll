@@ -8,6 +8,7 @@ import {
   query,
   orderBy,
   updateDoc,
+  where,
 } from "firebase/firestore";
 import iplogo from "../../assets/iplogo.png";
 import { toPng } from "html-to-image";
@@ -177,7 +178,40 @@ export default function AllPayslipsPage() {
           (it: any) => String(it?.name || "").toLowerCase() === empAlias
         );
 
-        // merge filed RemoteWork/WFH
+        // 🔎 fetch filed requests from /requests
+const reqSnap = await getDocs(
+  query(
+    collection(db, "requests"),
+    where("employeeId", "==", p.employeeId || ""),
+    where("status", "==", "approved")
+  )
+);
+
+reqSnap.forEach((d) => {
+  const r = (d.data() as any).details;
+  if (!r?.date) return;
+
+  const reqDate = new Date(r.date).toLocaleDateString("en-US"); // format date MM/DD/YYYY
+  const existing = mine.find((it: any) => new Date(it.date).toLocaleDateString("en-US") === reqDate);
+
+  const note = `${r.type} • filedAt: ${toDate(r.filedAt)?.toLocaleString() || ""}`;
+
+  if (existing) {
+    if (!existing.timeIn) existing.timeIn = r.timeIn || "wfh";
+    if (!existing.timeOut) existing.timeOut = r.timeOut || "wfh";
+    existing.note = note;
+  } else {
+    mine.push({
+      date: r.date,
+      timeIn: r.timeIn || "wfh",
+      timeOut: r.timeOut || "wfh",
+      hoursWorked: r.hours || 8,
+      daysWorked: 1,
+      note,
+    });
+  }
+});
+        // merge filed remotework/wfh
         const filed = (p.details?.filedRequests || []).filter((f) =>
           ["remotework", "wfh"].includes((f.type || "").toLowerCase())
         );
@@ -185,14 +219,14 @@ export default function AllPayslipsPage() {
           const dateStr = f.date;
           const existing = mine.find((it: any) => it.date === dateStr);
           if (existing) {
-            if (!existing.timeIn) existing.timeIn = "WFH";
-            if (!existing.timeOut) existing.timeOut = "WFH";
+            if (!existing.timeIn) existing.timeIn = "wfh";
+            if (!existing.timeOut) existing.timeOut = "wfh";
             existing.note = `${f.type} • filedAt: ${toDate(f.filedAt)?.toLocaleString() || ""}`;
           } else {
             mine.push({
               date: dateStr,
-              timeIn: "WFH",
-              timeOut: "WFH",
+              timeIn: "wfh",
+              timeOut: "wfh",
               hoursWorked: 8,
               daysWorked: 1,
               note: `${f.type} • filedAt: ${toDate(f.filedAt)?.toLocaleString() || ""}`,
@@ -226,6 +260,31 @@ export default function AllPayslipsPage() {
       alert("Failed to publish.");
     }
   }
+
+  async function publishAllPayslips(rows: PayslipDoc[]) {
+  try {
+    for (const p of rows) {
+      await updateDoc(doc(db, "payslips", p.id), { status: "ready" });
+
+      if (p.employeeEmail) {
+        await fetch("/api/sendEmail", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            to: p.employeeEmail,
+            subject: `Payslip for ${p.cutoffLabel}`,
+            text: `Your payslip for ${p.cutoffLabel} is now available.`,
+          }),
+        });
+      }
+    }
+    alert("All payslips published & emails sent.");
+  } catch (e) {
+    console.error("Publish All error:", e);
+    alert("Failed to publish all payslips.");
+  }
+}
+
 
   async function rejectPayslip(p: PayslipDoc) {
     try {
@@ -272,9 +331,18 @@ export default function AllPayslipsPage() {
 
         {/* List */}
         <div className="rounded-2xl border border-white/10 bg-gray-800/40 overflow-hidden">
-          <div className="px-4 sm:px-6 py-4 border-b border-white/10 text-lg font-semibold">
-            Available Payslips
-          </div>
+          <div className="px-4 sm:px-6 py-4 border-b border-white/10 flex items-center justify-between">
+            <div className="text-lg font-semibold">Available Payslips</div>
+            {role === "admin_final" && filtered.length > 0 && (
+                <button
+                onClick={() => publishAllPayslips(filtered)}
+                className="px-3 sm:px-4 py-2 rounded-xl bg-green-700 hover:bg-green-600 text-sm"
+                >
+                Publish All
+                </button>
+            )}
+            </div>
+
 
           {loading ? (
             <div className="p-8 text-center text-gray-400">Loading…</div>
@@ -541,7 +609,12 @@ function PayslipModal({
 
                       return (
                         <tr key={i} className="border-b border-black">
-                          <td className="p-2 border-r border-black">{l?.date || ""}</td>
+                          <td className="p-2 border-r border-black">
+                        {l?.date ? new Date(l.date).toLocaleDateString("en-US") : ""}
+                        {l?.note && (
+                            <div className="text-[10px] text-gray-600">{l.note}</div>
+                        )}
+                        </td>
                           <td className="p-2 border-r border-black">{inLabel}</td>
                           <td className="p-2 border-r border-black">{outLabel}</td>
                           <td className="p-2 border-r border-black text-right">{hoursOrDays}</td>
