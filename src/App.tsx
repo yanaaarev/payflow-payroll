@@ -29,6 +29,7 @@ import FinanceSettingsPage from "./pages/Finance/FinanceSettingsPage";
 import ProfilePage from "./pages/Employee/ProfilePage";
 import ViewingBudget from "./pages/Viewing/ViewingBudget";
 import ViewingRequest from "./pages/Viewing/ViewingRequest";
+import AllPayslipsPage from "./pages/Admin/AllPayslipsPage";
 import ExecutiveDashboard from "./pages/Executive/ExecutiveDashboard";
 import ProtectedRoute from "./components/ProtectedRoute";
 import Sidebar from "./components/Sidebar";
@@ -314,6 +315,16 @@ export default function App() {
             element={
               <RoleGate allow={["admin_final", "admin_overseer", "exec", "finance"]}>
                 <ApprovalsPage />
+              </RoleGate>
+            }
+          />
+
+          {/* All Payslips */}
+          <Route
+            path="/all-payslips"
+            element={
+              <RoleGate allow={["admin_final", "admin_overseer", "exec", "finance"]}>
+                <AllPayslipsPage />
               </RoleGate>
             }
           />
