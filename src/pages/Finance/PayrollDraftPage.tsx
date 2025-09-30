@@ -121,6 +121,7 @@ type FiledRequest = {
   status: "approved" | "pending" | "rejected";
   employeeName?: string;
   suggestedRate?: number;
+  filedAt?: any;
 
   // 👇 always require explicit filed in/out for remote & rdot
   timeIn?: string | null;
@@ -687,6 +688,7 @@ useEffect(() => {
         status: "approved",
         employeeName: fullName,
         suggestedRate: Number(details.suggestedRate ?? r.suggestedRate ?? 0) || undefined,
+        filedAt: r.filedAt || r.createdAt || serverTimestamp(),
 
         // ✅ pick up filed in/out (always required for remotework/wfh/rdot)
         timeIn: details.in || r.in || null,
@@ -748,6 +750,7 @@ useEffect(() => {
   
   async function execApprove() {
   if (!draftId || !isExec) return;
+  setExecLoading(true);
   const auth = getAuth();
   const u = auth.currentUser;
   if (!u) return;
@@ -784,6 +787,7 @@ useEffect(() => {
          <p><a href="https://yourapp.com/finance/payroll/drafts/${draftId}">Review Draft</a></p>`,
     }),
   });
+  setExecLoading(false);
 }
   });
 }
@@ -816,8 +820,13 @@ function removeUndefined(obj: any): any {
   return obj;
 }
 
+const [execLoading, setExecLoading] = useState(false);
+const [adminLoading, setAdminLoading] = useState(false);
+
+
   async function adminFinalApprove() {
   if (!draftId || !isAdminFinal || !head) return;
+  setAdminLoading(true);
   const auth = getAuth();
   const u = auth.currentUser;
   if (!u) return;
@@ -859,51 +868,21 @@ function removeUndefined(obj: any): any {
       let cur = new Date(cutoffStart);
 
       while (cur <= cutoffEnd) {
-        const day = cur.getDay(); // 0 = Sunday, 6 = Saturday
-        if (day !== 0 && day !== 6) { // ✅ count only Mon–Fri
-          daysOfWork++;
-        }
+        const day = cur.getDay();
+        if (day !== 0 && day !== 6) daysOfWork++;
         cur.setDate(cur.getDate() + 1);
       }
 
-
       // ✅ detailed earnings
       const earnings = [
-        {
-          label: "Basic Pay",
-          amount: out.cutoffPay,
-          rateDay: `${out.dailyRate || 0}`,
-          rateHour: "",
-        },
-        {
-          label: "Official Business (OB)",
-          amount: out.obPay,
-          note: `${input.obQuantity || 0} OBs`,
-        },
-        {
-          label: "OT Pay",
-          amount: out.otPay,
-          note: `${input.otHours || 0} hrs`,
-        },
-        {
-          label: "Holiday Pay",
-          amount: out.holiday30Pay + out.holidayDoublePay + out.holidayOtDoublePay,
-        },
-        {
-          label: "Night Differential",
-          amount: out.nightDiffPay,
-          note: `${input.ndHours || 0} hrs`,
-        },
-        {
-          label: "RDOT Pay",
-          amount: out.rdotPay,
-          note: `${input.rdotHours || 0} hrs`,
-        },
-        {
-          label: "Commission",
-          amount: comm,
-        },
-      ].filter((e) => e.amount && e.amount !== 0);
+        { label: "Basic Pay", amount: out.cutoffPay, rateDay: `${out.dailyRate || 0}` },
+        { label: "Official Business (OB)", amount: out.obPay, note: `${input.obQuantity || 0} OBs` },
+        { label: "OT Pay", amount: out.otPay, note: `${input.otHours || 0} hrs` },
+        { label: "Holiday Pay", amount: out.holiday30Pay + out.holidayDoublePay + out.holidayOtDoublePay },
+        { label: "Night Differential", amount: out.nightDiffPay, note: `${input.ndHours || 0} hrs` },
+        { label: "RDOT Pay", amount: out.rdotPay, note: `${input.rdotHours || 0} hrs` },
+        { label: "Commission", amount: comm },
+      ].filter(e => e.amount && e.amount !== 0);
 
       // ✅ detailed deductions
       const deductions = [
@@ -911,33 +890,10 @@ function removeUndefined(obj: any): any {
         { label: "SSS", amount: out.sss },
         { label: "Pagibig", amount: out.pagibig },
         { label: "Philhealth", amount: out.philhealth },
-        {
-          label: "Tardiness / Lates",
-          amount: out.tardinessDeduction,
-          note: `${input.tardinessMinutes || 0} mins`,
-        },
-      ].filter((d) => d.amount && d.amount !== 0);
+        { label: "Tardiness / Lates", amount: out.tardinessDeduction, note: `${input.tardinessMinutes || 0} mins` },
+      ].filter(d => d.amount && d.amount !== 0);
 
-      // ✅ Notify employee
-if (employeeEmail) {
-  await fetch("/api/sendEmail", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      to: employeeEmail,
-      subject: "💰 Your Payslip is Ready",
-      html: `
-        <p>Hello ${employeeName},</p>
-        <p>Your payslip for <b>${head.cutoffLabel}</b> is now available.</p>
-        <p>
-          Gross: ${peso(out.grossEarnings + comm)}<br/>
-          Net: ${peso(out.netPay + comm)}
-        </p>
-      `,
-    }),
-  });
-}
-
+      // ❌ REMOVE email sending here — will happen only in AllPayslipsPage → Publish
 
       // ✅ save payslip
       await addDoc(slipsCol, {
@@ -955,7 +911,7 @@ if (employeeEmail) {
         workDays: ln.daysWorked || 0,
         daysOfWork,
         createdAt: serverTimestamp(),
-        status: "ready",
+        status: "for_admin_review", // 👈 not ready yet
 
         grossEarnings: out.grossEarnings + comm,
         totalDeductions: out.totalDeductions,
@@ -964,41 +920,49 @@ if (employeeEmail) {
         earnings,
         deductions,
 
-        // ✅ full details for traceability
         details: removeUndefined({
           input,
           output: out,
           commissions: comm,
+          filedRequests: (filedRequests[employeeName] || []).filter(
+            f => ["remotework", "wfh"].includes(f.type?.toLowerCase() || "")
+          ).map(f => ({
+            ...f,
+            filedAt: f.filedAt || new Date().toISOString(), // ✅ include filedAt
+          })),
         }),
       });
     }
 
     // ✅ mark draft as approved
-   tx.update(draftRef, {
-  adminApproval: {
-    uid: u.uid,
-    name: u.displayName || u.email || "admin_final",
-    at: serverTimestamp(),
-  },
-  status: "approved",
-  totals: {
-    gross: previewTotals.gross,
-    net: previewTotals.net,
-    count: previewTotals.count,
-  },
-  updatedAt: serverTimestamp(),
-});
+    tx.update(draftRef, {
+      adminApproval: {
+        uid: u.uid,
+        name: u.displayName || u.email || "admin_final",
+        at: serverTimestamp(),
+      },
+      status: "approved",
+      totals: {
+        gross: previewTotals.gross,
+        net: previewTotals.net,
+        count: previewTotals.count,
+      },
+      updatedAt: serverTimestamp(),
+    });
   });
+
+  setAdminLoading(false);
 }
 
     async function rejectDraft(role: string) {
     if (!draftId) return;
+    setAdminLoading(true);
     await updateDoc(doc(db, "payrollDrafts", draftId), {
       status: "rejected",
       rejectedBy: role,
       rejectedAt: serverTimestamp(),
     });
-
+setAdminLoading(false);
     // ✅ Notify finance/admin/exec depending on role
   // ✅ Call API route instead of direct nodemailer
   await fetch("/api/sendEmail", {
@@ -1567,18 +1531,19 @@ const alreadyAdminApproved =
   {/* Exec role only */}
   {isExec && head.status === "pending_exec" && (
     <>
-      <button
-        type="button"
-        disabled={alreadyExecApproved}
-        onClick={execApprove}
-        className={`px-4 py-2 rounded-lg text-sm font-medium transition text-white ${
-          alreadyExecApproved
-            ? "bg-gray-600 cursor-not-allowed"
-            : "bg-blue-600 hover:bg-blue-500"
-        }`}
-      >
-        {alreadyExecApproved ? "Approved" : "Exec Approve"}
-      </button>
+    <button
+    type="button"
+    disabled={alreadyExecApproved || execLoading}
+    onClick={execApprove}
+    className={`px-4 py-2 rounded-lg text-sm font-medium transition text-white ${
+      alreadyExecApproved || execLoading
+        ? "bg-gray-600 cursor-not-allowed"
+        : "bg-blue-600 hover:bg-blue-500"
+    }`}
+  >
+    {execLoading ? "Approving..." : alreadyExecApproved ? "Approved" : "Exec Approve"}
+  </button>
+
 
       <button
         type="button"
@@ -1599,17 +1564,17 @@ const alreadyAdminApproved =
   {isAdminFinal && head.status === "pending_admin" && (
     <>
       <button
-        type="button"
-        disabled={alreadyAdminApproved}
-        onClick={adminFinalApprove}
-        className={`px-4 py-2 rounded-lg text-sm font-medium transition text-white ${
-          alreadyAdminApproved
-            ? "bg-gray-600 cursor-not-allowed"
-            : "bg-emerald-600 hover:bg-emerald-500"
-        }`}
-      >
-        {alreadyAdminApproved ? "Approved" : "Approve to Publish"}
-      </button>
+      type="button"
+      disabled={alreadyAdminApproved || adminLoading}
+      onClick={adminFinalApprove}
+      className={`px-4 py-2 rounded-lg text-sm font-medium transition text-white ${
+        alreadyAdminApproved || adminLoading
+          ? "bg-gray-600 cursor-not-allowed"
+          : "bg-emerald-600 hover:bg-emerald-500"
+      }`}
+    >
+      {adminLoading ? "Approving..." : alreadyAdminApproved ? "Approved" : "Approve to Publish"}
+    </button>
 
       <button
         type="button"

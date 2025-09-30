@@ -1,7 +1,14 @@
 // src/pages/admin/AllPayslipsPage.tsx
 import { useEffect, useMemo, useRef, useState } from "react";
 import { db } from "../../firebase/firebase";
-import { collection, getDocs, query, orderBy } from "firebase/firestore";
+import {
+  collection,
+  doc,
+  getDocs,
+  query,
+  orderBy,
+  updateDoc,
+} from "firebase/firestore";
 import iplogo from "../../assets/iplogo.png";
 import { toPng } from "html-to-image";
 import { jsPDF } from "jspdf";
@@ -15,6 +22,12 @@ type MoneyRow = {
   amount?: number;
 };
 
+type FiledRequest = {
+  type: string;
+  date: string;
+  filedAt?: any;
+};
+
 type PayslipDoc = {
   id: string;
   employeeId?: string;
@@ -24,22 +37,23 @@ type PayslipDoc = {
   designation?: string;
   employeeAlias?: string;
   category?: string;
-
   cutoffLabel?: string;
   cutoffStart?: any;
   cutoffEnd?: any;
   workDays?: number;
   daysOfWork?: number;
-
   earnings?: MoneyRow[];
   deductions?: MoneyRow[];
   totalEarnings?: number;
   totalDeductions?: number;
   netPay?: number;
-
   periodKey?: string;
   draftId?: string;
   createdAt?: any;
+  status?: string;
+  details?: {
+    filedRequests?: FiledRequest[];
+  };
 };
 
 type AttendanceSnapshot = {
@@ -78,6 +92,9 @@ export default function AllPayslipsPage() {
   // filters
   const [selectedCutoff, setSelectedCutoff] = useState<string>("all");
   const [search, setSearch] = useState<string>("");
+
+  // TODO: wire actual auth role
+  const role = "admin_final"; // simulate current user role
 
   useEffect(() => {
     (async () => {
@@ -145,33 +162,78 @@ export default function AllPayslipsPage() {
           (p.cutoffLabel && x.cutoffLabel === p.cutoffLabel);
 
         if (samePeriod) {
-          hit = {
-            id: d.id,
-            ...(x as Record<string, any>),
-          } as AttendanceSnapshot;
+          hit = { id: d.id, ...(x as Record<string, any>) } as AttendanceSnapshot;
         }
       });
 
       if (hit) {
         let itemsArr: any[] = [];
         const rawItems: any = (hit as any).items ?? [];
+        if (Array.isArray(rawItems)) itemsArr = rawItems;
+        else if (rawItems && typeof rawItems === "object") itemsArr = Object.values(rawItems);
 
-        if (Array.isArray(rawItems)) {
-          itemsArr = rawItems;
-        } else if (rawItems && typeof rawItems === "object") {
-          itemsArr = Object.values(rawItems);
-        }
-
-        // compare payslip.employeeAlias to attendance.name
         const empAlias = (p.employeeAlias || "").toLowerCase();
-        const mine = itemsArr.filter(
+        let mine = itemsArr.filter(
           (it: any) => String(it?.name || "").toLowerCase() === empAlias
         );
+
+        // merge filed RemoteWork/WFH
+        const filed = (p.details?.filedRequests || []).filter((f) =>
+          ["remotework", "wfh"].includes((f.type || "").toLowerCase())
+        );
+        filed.forEach((f) => {
+          const dateStr = f.date;
+          const existing = mine.find((it: any) => it.date === dateStr);
+          if (existing) {
+            if (!existing.timeIn) existing.timeIn = "WFH";
+            if (!existing.timeOut) existing.timeOut = "WFH";
+            existing.note = `${f.type} • filedAt: ${toDate(f.filedAt)?.toLocaleString() || ""}`;
+          } else {
+            mine.push({
+              date: dateStr,
+              timeIn: "WFH",
+              timeOut: "WFH",
+              hoursWorked: 8,
+              daysWorked: 1,
+              note: `${f.type} • filedAt: ${toDate(f.filedAt)?.toLocaleString() || ""}`,
+            });
+          }
+        });
 
         setAtt({ ...(hit as any), items: mine });
       }
     } catch (e) {
       console.error("Error getting attendance:", e);
+    }
+  }
+
+  async function publishPayslip(p: PayslipDoc) {
+    try {
+      await updateDoc(doc(db, "payslips", p.id), { status: "ready" });
+      // send email
+      await fetch("/api/sendEmail", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          to: p.employeeEmail,
+          subject: `Payslip for ${p.cutoffLabel}`,
+          text: `Your payslip for ${p.cutoffLabel} is now available.`,
+        }),
+      });
+      alert("Payslip published & email sent.");
+    } catch (e) {
+      console.error("Publish error:", e);
+      alert("Failed to publish.");
+    }
+  }
+
+  async function rejectPayslip(p: PayslipDoc) {
+    try {
+      await updateDoc(doc(db, "payslips", p.id), { status: "rejected" });
+      alert("Payslip rejected.");
+    } catch (e) {
+      console.error("Reject error:", e);
+      alert("Failed to reject.");
     }
   }
 
@@ -231,19 +293,32 @@ export default function AllPayslipsPage() {
                       <div className="font-semibold text-left">{label}</div>
                       <div className="text-xs sm:text-sm text-gray-300">
                         {p.employeeName || "—"} <span className="mx-2">•</span>{" "}
-                        Net Pay{" "}
-                        <span className="text-white font-medium">
-                          {peso(p.netPay)}
-                        </span>
+                        Net Pay <span className="text-white font-medium">{peso(p.netPay)}</span>
                       </div>
                     </div>
-                    <div>
+                    <div className="flex gap-2">
                       <button
                         onClick={() => openSlip(p)}
                         className="px-3 sm:px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-sm"
                       >
                         View / Download
                       </button>
+                      {role === "admin_final" && (
+                        <>
+                          <button
+                            onClick={() => publishPayslip(p)}
+                            className="px-3 sm:px-4 py-2 rounded-xl bg-green-600 hover:bg-green-500 text-sm"
+                          >
+                            Publish
+                          </button>
+                          <button
+                            onClick={() => rejectPayslip(p)}
+                            className="px-3 sm:px-4 py-2 rounded-xl bg-red-600 hover:bg-red-500 text-sm"
+                          >
+                            Reject
+                          </button>
+                        </>
+                      )}
                     </div>
                   </div>
                 );
@@ -495,7 +570,6 @@ function Row2({ label, value }: { label: string; value: string }) {
     </div>
   );
 }
-
 function periodSpan(p: PayslipDoc) {
   const s = toDate(p.cutoffStart);
   const e = toDate(p.cutoffEnd);
