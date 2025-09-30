@@ -199,22 +199,22 @@ export default function MyPayslipsPage() {
             const filedDate = new Date(r.date);
             if (filedDate >= toDate(p.cutoffStart)! && filedDate <= toDate(p.cutoffEnd)!) {
               if (["remotework", "wfh"].includes((r.type || "").toLowerCase())) {
-                const dateStr = new Date(r.date).toLocaleDateString("en-US"); // ✅ MM/DD/YYYY
+                const dateStr = new Date(r.date).toLocaleDateString("en-US"); // store clean MM/DD/YYYY
                 const existing = mine.find((it: any) => it.date === dateStr);
 
                 if (existing) {
-                  existing.timeIn = r.timeIn || "wfh";
-                  existing.timeOut = r.timeOut || "wfh";
-                  existing.note = `${r.type} • filedAt: ${toDate(r.filedAt)?.toLocaleString() || ""}`;
+                  existing.timeIn = r.timeIn || r.type;
+                  existing.timeOut = r.timeOut || r.type;
+                  existing.note = r.type; // just the type
                 } else {
                   mine.push({
-                    date: dateStr,
-                    timeIn: r.timeIn || "wfh",
-                    timeOut: r.timeOut || "wfh",
-                    hoursWorked: r.hours || 8,
-                    daysWorked: 1,
-                    note: `${r.type} • filedAt: ${toDate(r.filedAt)?.toLocaleString() || ""}`,
-                  });
+                  date: dateStr,
+                  type: (r.type || "").toUpperCase(), // keep for display
+                  timeIn: r.timeIn || "",
+                  timeOut: r.timeOut || "",
+                  hoursWorked: r.hours || 8,
+                  daysWorked: 1,
+                });
                 }
               }
             }
@@ -535,26 +535,18 @@ function PayslipModal({
                         hoursOrDays = Number(l?.hoursWorked || 0).toFixed(2);
                       }
 
-                      const inLabel =
-                        l?.timeIn && l.timeIn !== "wfh"
-                          ? new Date(l.timeIn).toLocaleTimeString()
-                          : l?.timeIn === "wfh"
-                          ? "wfh"
-                          : <span className="text-red-600 font-bold">NO IN</span>;
-                      const outLabel =
-                        l?.timeOut && l.timeOut !== "wfh"
-                          ? new Date(l.timeOut).toLocaleTimeString()
-                          : l?.timeOut === "wfh"
-                          ? "wfh"
-                          : <span className="text-red-600 font-bold">NO OUT</span>;
+                     const inLabel = l?.timeIn
+                        ? l.timeIn
+                        : <span className="text-red-600 font-bold">NO IN</span>;
+
+                      const outLabel = l?.timeOut
+                        ? l.timeOut
+                        : <span className="text-red-600 font-bold">NO OUT</span>;
 
                       return (
                         <tr key={i} className="border-b border-black">
-                                                <td className="p-2 border-r border-black">
-                        {new Date(l.date).toLocaleDateString("en-US")} {/* MM/DD/YYYY */}
-                        {l?.note && (
-                          <div className="text-[10px] text-gray-600">{l.note}</div>
-                        )}
+                       <td className="p-2 border-r border-black">
+                        {l.date} {l.type ? l.type : ""}
                       </td>
                           <td className="p-2 border-r border-black">{inLabel}</td>
                           <td className="p-2 border-r border-black">{outLabel}</td>
