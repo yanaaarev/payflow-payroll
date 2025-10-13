@@ -443,33 +443,48 @@ async function rejectBudget(id: string) {
   {reqsFiltered.filter((r) => r.status !== "pending").length === 0 ? (
     <Empty text="No approved/rejected requests yet." />
   ) : (
-    groupByDate(reqsFiltered.filter((r) => r.status !== "pending")).map(
-      ([date, items]) => (
-        <div key={date}>
-          <div className="px-6 py-2 bg-gray-700/50 text-sm font-medium text-gray-300">
-            {date}
-          </div>
-          {items.map((r) => (
-            <DetailsView
-              key={r.id}
-              title={r.employeeName}
-              status={r.status}
-              right={
-                <button
-                  onClick={() => navigate(`/approvals/view-request/${r.id}`)}
-                  className="px-3 py-1 text-xs rounded bg-blue-600 hover:bg-blue-500"
-                >
-                  View
-                </button>
-              }
-            />
-          ))}
-        </div>
-      )
-    )
+    <>
+      {(["ob", "ot", "remotework", "wfh", "rdot", "sl", "bl", "vl"] as ReqType[]).map(
+        (t) => {
+          const group = reqsFiltered.filter(
+            (r) => r.status !== "pending" && r.type === t
+          );
+          if (group.length === 0) return null;
+
+          return (
+            <AccordionSection
+              key={t}
+              title={`${t.toUpperCase()} History (${group.length})`}
+            >
+              {groupByDate(group).map(([date, items]) => (
+                <div key={date}>
+                  <div className="px-6 py-2 bg-gray-700/50 text-sm font-medium text-gray-300">
+                    {date}
+                  </div>
+                  {items.map((r) => (
+                    <DetailsView
+                      key={r.id}
+                      title={r.employeeName}
+                      status={r.status}
+                      right={
+                        <button
+                          onClick={() => navigate(`/approvals/view-request/${r.id}`)}
+                          className="px-3 py-1 text-xs rounded bg-blue-600 hover:bg-blue-500"
+                        >
+                          View
+                        </button>
+                      }
+                    />
+                  ))}
+                </div>
+              ))}
+            </AccordionSection>
+          );
+        }
+      )}
+    </>
   )}
 </CardPanel>
-
 
     {/* Budgets History */}
     <CardPanel title="Budgets History" loading={loading}>
