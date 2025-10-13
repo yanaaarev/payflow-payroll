@@ -924,12 +924,10 @@ const [adminLoading, setAdminLoading] = useState(false);
           input,
           output: out,
           commissions: comm,
-          filedRequests: (filedRequests[employeeName] || []).filter(
-            f => ["remotework", "wfh"].includes(f.type?.toLowerCase() || "")
-          ).map(f => ({
-            ...f,
-            filedAt: f.filedAt || new Date().toISOString(), // ✅ include filedAt
-          })),
+          filedRequests: (filedRequests[employeeName] || []).map(f => ({
+        ...f,
+        filedAt: f.filedAt || new Date().toISOString(),
+      })),
         }),
       });
     }
@@ -1130,6 +1128,13 @@ const updateCommField = (id: string, field: keyof CommRow, v: string) => {
     setFpQty("1");
     setFpRate("0");
   };
+
+  // add under freelancer modal states
+  const [showAddEmpModal, setShowAddEmpModal] = useState(false);
+  const [empOptions, setEmpOptions] = useState<Array<{ id: string; name: string; category: string; monthlySalary?: number; perDayRate?: number }>>([]);
+  const [empPick, setEmpPick] = useState("");
+  const [empDays, setEmpDays] = useState<string>(""); // optional initial days
+
   async function submitFreelancerPayment() {
   if (!draftId || !fpFreelancerId) return;
 
@@ -1181,6 +1186,35 @@ const updateCommField = (id: string, field: keyof CommRow, v: string) => {
   setFpEntries([{ project: "", qty: 1, rate: 0 }]);
   setShowFPModal(false);
 }
+
+useEffect(() => {
+  (async () => {
+    if (!showAddEmpModal) return;
+    try {
+      // employees not freelancer, and not already in lines
+      const existing = new Set(lines.map(l => String(l.employeeId || l.id)));
+      const qRef = query(collection(db, "employees"), where("category", "in", ["core", "core_probationary", "intern", "owner"]));
+      const snap = await getDocs(qRef);
+      const list: Array<{ id: string; name: string; category: string; monthlySalary?: number; perDayRate?: number }> = [];
+      snap.forEach(d => {
+        if (existing.has(d.id)) return;
+        const e = d.data() as any;
+        list.push({
+          id: d.id,
+          name: e.name || d.id,
+          category: String(e.category || "core"),
+          monthlySalary: Number(e.monthlySalary || 0) || undefined,
+          perDayRate: Number(e.perDayRate || e.perDayOrMonthly || e.dailyProbationary || 0) || undefined,
+        });
+      });
+      setEmpOptions(list.sort((a, b) => a.name.localeCompare(b.name)));
+    } catch {
+      setEmpOptions([]);
+    }
+  })();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+}, [showAddEmpModal, lines.map(l => l.employeeId).join(",")]);
+
 
 /* ------------------------------------------------------------
    DAILY MERGE HELPER
@@ -1515,6 +1549,15 @@ const alreadyAdminApproved =
       >
         + Freelancer Payment
       </button>
+
+       {/* NEW: add employee without biometric */}
+    <button
+      type="button"
+      onClick={() => setShowAddEmpModal(true)}
+      className="px-4 py-2 rounded-lg text-sm font-medium transition bg-indigo-600 hover:bg-indigo-500 text-white"
+    >
+      + Add Employee (no biometric)
+    </button>
 
       {head.status === "draft" && (
         <button
@@ -2221,6 +2264,101 @@ const alreadyAdminApproved =
     </div>
   </div>
 )}
+
+{showAddEmpModal && (
+  <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-50">
+    <div className="w-full max-w-lg bg-gray-900 border border-white/10 rounded-xl p-6">
+      <h3 className="text-lg font-semibold mb-4">Add Employee (no biometric)</h3>
+
+      <div className="space-y-4">
+        <div>
+          <label className="block text-sm text-gray-300 mb-1">Employee</label>
+          <select
+            value={empPick}
+            onChange={(e) => setEmpPick(e.target.value)}
+            className="w-full bg-gray-800 border border-white/20 rounded px-3 py-2 text-white"
+          >
+            <option value="">Select employee…</option>
+            {empOptions.map((o) => (
+              <option key={o.id} value={o.id} className="bg-gray-800 text-white">
+                {o.name} {o.monthlySalary ? `• ₱${o.monthlySalary.toLocaleString()}` : ""}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div>
+          <label className="block text-sm text-gray-300 mb-1">
+            Initial Days Worked in Cutoff (optional)
+          </label>
+          <input
+            type="number"
+            min="0"
+            step="0.001"
+            value={empDays}
+            onChange={(e) => setEmpDays(e.target.value)}
+            className="w-full bg-white/10 border border-white/20 rounded px-3 py-2 text-white"
+            placeholder="e.g. 11 or 10.5"
+          />
+          <p className="text-xs text-gray-400 mt-1">
+            Leave blank to start at 0 (finance can edit inline in the list).
+          </p>
+        </div>
+      </div>
+
+      <div className="mt-5 flex justify-end gap-2">
+        <button
+          onClick={() => setShowAddEmpModal(false)}
+          className="px-4 py-2 rounded bg-gray-700 hover:bg-gray-600"
+        >
+          Cancel
+        </button>
+        <button
+          onClick={async () => {
+            if (!draftId || !empPick) return;
+            const picked = empOptions.find(e => e.id === empPick);
+            const daysNum = empDays ? Math.max(0, Number(empDays) || 0) : 0;
+
+            // Create a line similar to freelancers but classified as employee
+            const lineRef = doc(db, "payrollDrafts", draftId, "lines", empPick);
+
+            await setDoc(lineRef, {
+              employeeId: empPick,
+              name: picked?.name || empPick,
+              category: picked?.category || "core",
+              periodKey: head?.periodKey || "",
+              cutoffStart: head?.cutoffStart || null,
+              cutoffEnd: head?.cutoffEnd || null,
+
+              // 👇 no biometric rows; finance can set days manually
+              timeInOut: [],
+              hoursWorked: 0,
+
+              // 👇 important: include monthly/per-day baselines for payrollLogic
+              monthlySalary: Number(picked?.monthlySalary || 0) || undefined,
+
+              // start with optional initial days (editable inline in the list)
+              daysWorked: daysNum,
+
+              adjustments: {},
+              adjustmentsTotal: 0,
+              commissionsTotal: 0,
+              updatedAt: serverTimestamp(),
+            }, { merge: true });
+
+            setEmpPick("");
+            setEmpDays("");
+            setShowAddEmpModal(false);
+          }}
+          className="px-4 py-2 rounded bg-indigo-600 hover:bg-indigo-500"
+        >
+          Add
+        </button>
+      </div>
+    </div>
+  </div>
+)}
+
         <div className="mt-6 text-xs text-gray-400">
           • Employee names come from <code>/employees.name</code> (never alias). • Monthly &amp; per-day baselines are
           fetched from <code>/employees</code> and normalized for <code>payrollLogic</code>. • Owners are auto-added. •

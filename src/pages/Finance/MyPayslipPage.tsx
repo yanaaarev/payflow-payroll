@@ -152,106 +152,133 @@ export default function MyPayslipsPage() {
     return () => unsub();
   }, []);
 
+
+
   async function openSlip(p: PayslipDoc) {
-    setActive(p);
-    setOpen(true);
-    setAtt(null);
+  setActive(p);
+  setOpen(true);
+  setAtt(null);
 
-    try {
-      const aSnap = await getDocs(query(collection(db, "attendance")));
-      let hit: AttendanceSnapshot | null = null;
+  try {
+    const aSnap = await getDocs(query(collection(db, "attendance")));
+    let hit: AttendanceSnapshot | null = null;
 
-      aSnap.forEach((d) => {
-        const x = d.data() as any;
-        const samePeriod =
-          (p.periodKey && x.periodKey === p.periodKey) ||
-          (p.cutoffLabel && x.cutoffLabel === p.cutoffLabel);
+    aSnap.forEach((d) => {
+      const x = d.data() as any;
+      const samePeriod =
+        (p.periodKey && x.periodKey === p.periodKey) ||
+        (p.cutoffLabel && x.cutoffLabel === p.cutoffLabel);
+      if (samePeriod) hit = { id: d.id, ...(x as Record<string, any>) } as AttendanceSnapshot;
+    });
 
-        if (samePeriod) {
-          hit = { id: d.id, ...(x as Record<string, any>) } as AttendanceSnapshot;
-        }
-      });
+    if (!hit) return;
 
-      if (hit) {
-        let itemsArr: any[] = [];
-        const rawItems: any = (hit as any).items ?? [];
-        if (Array.isArray(rawItems)) itemsArr = rawItems;
-        else if (rawItems && typeof rawItems === "object") itemsArr = Object.values(rawItems);
+    // normalize attendance items for this employee
+    const rawItems: any = (hit as any).items ?? [];
+    const itemsArr: any[] = Array.isArray(rawItems) ? rawItems : Object.values(rawItems);
+    const empAlias = (p.employeeAlias || "").toLowerCase();
+    let mine = itemsArr.filter((it: any) => String(it?.name || "").toLowerCase() === empAlias);
 
-        const empAlias = (p.employeeAlias || "").toLowerCase();
-        let mine = itemsArr.filter(
-          (it: any) => String(it?.name || "").toLowerCase() === empAlias
-        );
+    // helper: "YYYY-MM-DD" + "07:00" / "7:00 PM" -> ISO
+    const combineDateAndTime = (dateStr?: string, timeStr?: string | null) => {
+      if (!dateStr || !timeStr) return null;
+      const base = new Date(dateStr);
+      if (isNaN(base.getTime())) return null;
+      const m = String(timeStr).match(/(\d{1,2}):(\d{2})(?:\s*(AM|PM))?/i);
+      if (!m) return null;
+      let [, hh, mm, ap] = m;
+      let h = parseInt(hh, 10);
+      const mins = parseInt(mm, 10);
+      if (ap) {
+        ap = ap.toUpperCase();
+        if (ap === "PM" && h < 12) h += 12;
+        if (ap === "AM" && h === 12) h = 0;
+      }
+      base.setHours(h, mins, 0, 0);
+      return base.toISOString();
+    };
 
-        // 🔗 Fetch filed requests (remotework/wfh) directly from /requests
-        if (p.employeeId && p.cutoffStart && p.cutoffEnd) {
-          const reqRef = collection(db, "requests");
-          const reqSnap = await getDocs(
-            query(
-              reqRef,
-              where("details.employeeId", "==", p.employeeId),
-              where("details.status", "==", "approved")
-            )
-          );
+    // 🔎 Fetch approved filed requests (under details.*)
+    if (p.employeeId && p.cutoffStart && p.cutoffEnd) {
+      const start = toDate(p.cutoffStart)!;
+      const end = toDate(p.cutoffEnd)!;
 
-          reqSnap.forEach((d) => {
-            const r = d.data().details;
-            const filedDate = new Date(r.date);
-            if (filedDate >= toDate(p.cutoffStart)! && filedDate <= toDate(p.cutoffEnd)!) {
-              if (["remotework", "wfh"].includes((r.type || "").toLowerCase())) {
-                const dateStr = new Date(r.date).toLocaleDateString("en-US"); // store clean MM/DD/YYYY
-                const existing = mine.find((it: any) => it.date === dateStr);
+      const reqRef = collection(db, "requests");
+      // IMPORTANT: query nested fields
+      const reqSnap = await getDocs(
+        query(
+          reqRef,
+          where("details.employeeId", "==", p.employeeId),
+          where("details.status", "==", "approved")
+        )
+      );
 
-                if (existing) {
-                  existing.timeIn = r.timeIn || r.type;
-                  existing.timeOut = r.timeOut || r.type;
-                  existing.note = r.type; // just the type
-                } else {
-                  mine.push({
-                    date: dateStr,
-                    timeIn: r.timeIn || r.type,
-                    timeOut: r.timeOut || r.type,
-                    hoursWorked: r.hours || 8,
-                    daysWorked: 1,
-                    note: r.type, // just the type
-                  });
-                }
+      reqSnap.forEach((doc) => {
+        const det = (doc.data() as any).details || {};
+        const type = String(det.type || "").toLowerCase();
+        if (!["remotework", "wfh"].includes(type)) return;
 
-              }
-            }
+        const d = new Date(det.date);
+        if (isNaN(d.getTime()) || d < start || d > end) return;
+
+        const dateStr = d.toLocaleDateString("en-US"); // MM/DD/YYYY for table key match
+        const existing = mine.find((it: any) => it.date === dateStr);
+
+        const inISO = combineDateAndTime(det.date, det.timeIn);
+        const outISO = combineDateAndTime(det.date, det.timeOut);
+
+        if (existing) {
+          if (inISO) existing.timeIn = inISO;
+          if (outISO) existing.timeOut = outISO;
+          existing.note = `${type.toUpperCase()} • filedAt: ${
+            toDate(det.filedAt)?.toLocaleString() || ""
+          }`;
+        } else {
+          mine.push({
+            date: dateStr,
+            timeIn: inISO,
+            timeOut: outISO,
+            hoursWorked: Number(det.hours || 8),
+            daysWorked: 1,
+            note: `${type.toUpperCase()} • filedAt: ${
+              toDate(det.filedAt)?.toLocaleString() || ""
+            }`,
           });
         }
-
-        // 🔗 Merge filed remotework/wfh
-        const filed = (p.details?.filedRequests || []).filter((f) =>
-          ["remotework", "wfh"].includes((f.type || "").toLowerCase())
-        );
-
-        filed.forEach((f) => {
-          const dateStr = f.date;
-          const existing = mine.find((it: any) => it.date === dateStr);
-          if (existing) {
-            if (!existing.timeIn) existing.timeIn = "wfh";
-            if (!existing.timeOut) existing.timeOut = "wfh";
-            existing.note = `${f.type} • filedAt: ${toDate(f.filedAt)?.toLocaleString() || ""}`;
-          } else {
-            mine.push({
-              date: dateStr,
-              timeIn: "wfh",
-              timeOut: "wfh",
-              hoursWorked: 8,
-              daysWorked: 1,
-              note: `${f.type} • filedAt: ${toDate(f.filedAt)?.toLocaleString() || ""}`,
-            });
-          }
-        });
-
-        setAtt({ ...(hit as any), items: mine });
-      }
-    } catch (e) {
-      console.error("Error getting attendance:", e);
+      });
     }
+
+    // legacy filedRequests merging (kept as-is)
+    const filed = (p.details?.filedRequests || []).filter((f) =>
+      ["remotework", "wfh"].includes((f.type || "").toLowerCase())
+    );
+    filed.forEach((f) => {
+      const dateStr = f.date;
+      const existing = mine.find((it: any) => it.date === dateStr);
+      if (existing) {
+        existing.note = `${f.type.toUpperCase()} • filedAt: ${
+          toDate(f.filedAt)?.toLocaleString() || ""
+        }`;
+      } else {
+        mine.push({
+          date: dateStr,
+          timeIn: null,
+          timeOut: null,
+          hoursWorked: 8,
+          daysWorked: 1,
+          note: `${f.type.toUpperCase()} • filedAt: ${
+            toDate(f.filedAt)?.toLocaleString() || ""
+          }`,
+        });
+      }
+    });
+
+    setAtt({ ...(hit as any), items: mine });
+  } catch (e) {
+    console.error("Error getting attendance:", e);
   }
+}
+
 
   const title = useMemo(() => {
     if (!active) return "Payslip";
@@ -380,6 +407,149 @@ function PayslipModal({
     payslip.totalDeductions ?? deductions.reduce((a, b) => a + Number(b.amount || 0), 0);
   const net = payslip.netPay ?? totE - totD;
 
+  // ── BEGIN: computed helpers for earnings/deductions/attendance labels ──
+  const details: any = payslip.details || {};
+  const input: any = details.input || {};
+  const output: any = details.output || {};
+  const filed: any[] = Array.isArray(details.filedRequests) ? details.filedRequests : [];
+
+  // filed helpers
+  function fCount(type: string) {
+    return filed.filter(f => String(f.type || "").toLowerCase() === type).length;
+  }
+  function fHours(type: string) {
+    return filed
+      .filter(f => String(f.type || "").toLowerCase() === type)
+      .reduce((s, r) => s + Number(r.hours || 0), 0);
+  }
+
+  // rates & units from payrollLogic output
+  const dailyRate = Number(output?.dailyRate || 0);
+
+  const obQty = Number(input?.obQuantity || 0);
+  const obUnit = obQty > 0 ? (Number(output?.obPay || 0) / obQty) : 0;
+
+  const otHrs = Number(input?.otHours || 0);
+  const otRate = otHrs > 0 ? (Number(output?.otPay || 0) / otHrs) : 0;
+
+  const rdotHrs = Number(input?.rdotHours || 0);
+  const rdotRate = rdotHrs > 0 ? (Number(output?.rdotPay || 0) / rdotHrs) : 0;
+
+  // show actual computations on key earnings; preserve existing rows
+  const earningsDecorated = (payslip.earnings || []).map((e) => {
+    const label = (e.label || "").toLowerCase();
+    const row = { ...e };
+
+    if (label.includes("basic")) {
+      const worked = Number(input?.workedDays || 0);
+      if (worked && dailyRate) {
+        row.note = `${worked} day(s) × ${peso(dailyRate)} = ${peso(dailyRate * worked)}`;
+        row.rateDay = `${peso(dailyRate)}`;
+      }
+    }
+
+    if (label.includes("official business") || label === "ob" || label.includes("(ob)")) {
+      if (obQty) {
+        row.note = `${obQty} × ${peso(obUnit)} = ${peso(Number(output?.obPay || 0))}`;
+      }
+    }
+
+    if (label.includes("ot")) {
+      if (otHrs) {
+        row.note = `${otHrs} hr(s) × ${peso(otRate)} = ${peso(Number(output?.otPay || 0))}`;
+        row.rateHour = `${peso(otRate)}`;
+      }
+    }
+
+    if (label.includes("rdot")) {
+      if (rdotHrs) {
+        row.note = `${rdotHrs} hr(s) × ${peso(rdotRate)} = ${peso(Number(output?.rdotPay || 0))}`;
+        row.rateHour = `${peso(rdotRate)}`;
+      }
+    }
+
+    return row;
+  });
+
+  // add info-only rows for filed items (that may already be included in basic pay)
+  const remoteHours = fHours("remotework");
+  const wfhHours = fHours("wfh");
+  const blCount = fCount("bl");
+  const vlCount = fCount("vl");
+  const slCount = fCount("sl");
+
+  const filedRows: MoneyRow[] = [];
+  if (fCount("ob")) {
+    filedRows.push({ label: "OB (filed)", note: `${fCount("ob")} filed`, amount: 0 });
+  }
+  if (otHrs) {
+    filedRows.push({ label: "OT (filed)", note: `${otHrs} hr(s) × ${peso(otRate)}`, amount: Number(output?.otPay || 0) });
+  }
+  if (remoteHours) {
+    filedRows.push({ label: "REMOTEWORK (filed)", note: `${remoteHours} hr(s) • included in Basic Pay`, amount: 0 });
+  }
+  if (wfhHours) {
+    filedRows.push({ label: "WFH (filed)", note: `${wfhHours} hr(s) • included in Basic Pay`, amount: 0 });
+  }
+  if (rdotHrs) {
+    filedRows.push({ label: "RDOT (filed)", note: `${rdotHrs} hr(s) × ${peso(rdotRate)}`, amount: Number(output?.rdotPay || 0) });
+  }
+  if (blCount) filedRows.push({ label: "BL (filed)", note: `${blCount} filed • (policy applies)`, amount: 0 });
+  if (vlCount) filedRows.push({ label: "VL (filed)", note: `${vlCount} filed • (policy applies)`, amount: 0 });
+  if (slCount) filedRows.push({ label: "SL (filed)", note: `${slCount} filed • (policy applies)`, amount: 0 });
+
+  // final earnings list for UI
+  const earningsToShow: MoneyRow[] = [
+    ...earningsDecorated,
+    ...filedRows,
+  ];
+
+  // show tardiness minutes inside the note of its deduction row
+  const deductionsDecorated = (payslip.deductions || []).map((d) => {
+    const row = { ...d };
+    const lbl = (row.label || "").toLowerCase();
+    if (lbl.includes("tardiness") || lbl.includes("lates")) {
+      const mins = Number(input?.tardinessMinutes || 0);
+      row.note = `${mins} minute(s) late`;
+    }
+    return row;
+  });
+
+  // attendance time renderer: show raw strings (e.g., "wfh") or time if ISO/date-like
+  function renderTime(val: any) {
+  if (!val) return "";
+
+  // If it's already an ISO-like string or Date -> format directly
+  const dt = new Date(val);
+  if (!Number.isNaN(dt.getTime()) && (typeof val !== "string" || /[T\-:]/.test(val))) {
+    return dt.toLocaleTimeString();
+  }
+
+  // If it's "HH:mm" or "h:mm AM/PM", convert to a Date anchored on today and format
+  if (typeof val === "string") {
+    const m = val.match(/(\d{1,2}):(\d{2})(?:\s*(AM|PM))?/i);
+    if (m) {
+      let [_, hh, mm, ap] = m;
+      let h = parseInt(hh, 10);
+      const mins = parseInt(mm, 10);
+      if (ap) {
+        ap = ap.toUpperCase();
+        if (ap === "PM" && h < 12) h += 12;
+        if (ap === "AM" && h === 12) h = 0;
+      }
+      const t = new Date();
+      t.setHours(h, mins, 0, 0);
+      return t.toLocaleTimeString();
+    }
+  }
+
+  // Fallback to raw text
+  return String(val);
+}
+
+  // ── END: computed helpers ──
+
+
   return (
     <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-2 sm:p-4">
       <div className="w-full sm:max-w-5xl max-h-[95vh] overflow-auto rounded-2xl border border-white/10 bg-gray-900">
@@ -442,7 +612,7 @@ function PayslipModal({
                   </tr>
                 </thead>
                 <tbody>
-                  {earnings.map((e, i) => (
+                  {earningsToShow.map((e, i) => (
                     <tr key={i} className="border-b border-black align-top">
                       <td className="p-2 sm:p-3 border-r border-black font-medium">
                         {e.label}
@@ -477,9 +647,14 @@ function PayslipModal({
                     <td className="p-2 sm:p-3 border-r border-black"></td>
                     <td className="p-2 sm:p-3 text-right"></td>
                   </tr>
-                  {deductions.map((d, i) => (
+                  {deductionsDecorated.map((d, i) => (
                     <tr key={i} className="border-b border-black">
-                      <td className="p-2 sm:p-3 border-r border-black">{d.label}</td>
+                     <td className="p-2 sm:p-3 border-r border-black">
+                      <div className="font-medium">{d.label}</div>
+                      {d.note && (
+                        <div className="text-[10px] sm:text-xs text-gray-600">{d.note}</div>
+                      )}
+                    </td>
                       <td className="p-2 sm:p-3 border-r border-black">{d.rateHour || ""}</td>
                       <td className="p-2 sm:p-3 border-r border-black">{d.rateDay || ""}</td>
                       <td className="p-2 sm:p-3 text-right">
@@ -536,18 +711,12 @@ function PayslipModal({
                         hoursOrDays = Number(l?.hoursWorked || 0).toFixed(2);
                       }
 
-                      const inLabel =
-                        l?.timeIn && l.timeIn !== "wfh"
-                          ? new Date(l.timeIn).toLocaleTimeString()
-                          : l?.timeIn === "wfh"
-                          ? "wfh"
-                          : <span className="text-red-600 font-bold">NO IN</span>;
-                      const outLabel =
-                        l?.timeOut && l.timeOut !== "wfh"
-                          ? new Date(l.timeOut).toLocaleTimeString()
-                          : l?.timeOut === "wfh"
-                          ? "wfh"
-                          : <span className="text-red-600 font-bold">NO OUT</span>;
+                     const inLabel = l?.timeIn
+                      ? renderTime(l.timeIn)
+                      : <span className="text-red-600 font-bold">NO IN</span>;
+                    const outLabel = l?.timeOut
+                      ? renderTime(l.timeOut)
+                      : <span className="text-red-600 font-bold">NO OUT</span>;
 
                       return (
                         <tr key={i} className="border-b border-black">
