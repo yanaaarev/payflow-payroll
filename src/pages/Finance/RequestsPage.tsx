@@ -178,6 +178,8 @@ export default function RequestsPage() {
         return;
       }
 
+      setSubmitting(true);
+
       const base: any = { date };
       if (needsProof) base.proofUrl = proofUrl.trim();
 
@@ -290,10 +292,9 @@ export default function RequestsPage() {
         </div>
 
         {/* ───────────── form only ───────────── */}
-        <form
-          onSubmit={submitRequest}
-          className="rounded-2xl border border-white/10 bg-gray-800/40 p-6 space-y-6"
-        >
+        <form onSubmit={submitRequest} className="rounded-2xl border border-white/10 bg-gray-800/40 p-6 space-y-6">
+  <div className={submitting ? "pointer-events-none opacity-90" : ""}>
+
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             <div className="md:col-span-2">
               <label className="lbl">Request Type</label>
@@ -472,12 +473,18 @@ export default function RequestsPage() {
           {/* Actions */}
           <div className="flex justify-center pt-2">
             <button
-              type="submit"
-              className="px-6 py-2 rounded-xl bg-blue-600 hover:bg-blue-500"
-              disabled={submitting}
-            >
-              Submit for Approval
-            </button>
+          type="submit"
+          className={`px-6 py-2 rounded-xl text-white ${
+            submitting
+              ? "bg-blue-900/60 cursor-not-allowed pointer-events-none"
+              : "bg-blue-600 hover:bg-blue-500"
+          }`}
+          disabled={submitting}
+          aria-disabled={submitting}
+        >
+          {submitting ? "Submitting…" : "Submit for Approval"}
+        </button>
+          </div>
           </div>
         </form>
       </div>
