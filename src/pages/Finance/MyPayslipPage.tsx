@@ -479,9 +479,6 @@ function PayslipModal({
   const slCount = fCount("sl");
 
   const filedRows: MoneyRow[] = [];
-  if (fCount("ob")) {
-    filedRows.push({ label: "OB (filed)", note: `${fCount("ob")} filed`, amount: 0 });
-  }
   if (otHrs) {
     filedRows.push({ label: "OT (filed)", note: `${otHrs} hr(s) × ${peso(otRate)}`, amount: Number(output?.otPay || 0) });
   }
