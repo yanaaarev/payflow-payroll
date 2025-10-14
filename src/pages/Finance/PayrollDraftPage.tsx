@@ -823,6 +823,55 @@ function removeUndefined(obj: any): any {
 const [execLoading, setExecLoading] = useState(false);
 const [adminLoading, setAdminLoading] = useState(false);
 
+// ---- helpers for merging filed requests with times ----
+function ymdKey(v: any): string | null {
+  if (!v) return null;
+  const d = new Date(v);
+  if (Number.isNaN(d.getTime())) return null;
+  return d.toISOString().slice(0, 10); // YYYY-MM-DD
+}
+
+async function fetchFiledWfhRemoteWithTimes(opts: {
+  employeeId: string;           // your HR ID eg "EMP007" (ln.employeeId)
+  cutoffStart: Date;
+  cutoffEnd: Date;
+}) {
+  const { employeeId, cutoffStart, cutoffEnd } = opts;
+  const reqCol = collection(db, "requests");
+
+  // support both schemas: details.* and root fields
+  const [qDetails, qRoot] = await Promise.all([
+    getDocs(query(reqCol, where("details.employeeId", "==", employeeId), where("details.status", "==", "approved"))),
+    getDocs(query(reqCol, where("employeeId", "==", employeeId), where("status", "==", "approved"))),
+  ]);
+
+  const rows: any[] = [];
+  const take = (doc: any) => {
+    const raw = doc.data() as any;
+    const det = raw.details ? raw.details : raw;
+
+    const type = String(det.type || "").toLowerCase();
+    if (!["remotework", "wfh"].includes(type)) return;
+
+    const d = new Date(det.date);
+    if (Number.isNaN(d.getTime())) return;
+    if (d < cutoffStart || d > cutoffEnd) return;
+
+    rows.push({
+      type,
+      date: det.date,                        // keep original
+      dateKey: ymdKey(det.date),             // normalized for merge
+      hours: Number(det.hours || 0),
+      timeIn: typeof det.timeIn === "string" ? det.timeIn : null,
+      timeOut: typeof det.timeOut === "string" ? det.timeOut : null,
+      filedAt: det.filedAt || null,
+    });
+  };
+
+  qDetails.forEach(take);
+  qRoot.forEach(take);
+  return rows;
+}
 
   async function adminFinalApprove() {
   if (!draftId || !isAdminFinal || !head) return;
@@ -860,9 +909,52 @@ const [adminLoading, setAdminLoading] = useState(false);
         employeeName = e.name || ln.name;
       }
 
-      // ✅ cutoff span → count working days (Mon–Fri only)
-      const cutoffStart = head.cutoffStart ? new Date(head.cutoffStart) : new Date();
-      const cutoffEnd = head.cutoffEnd ? new Date(head.cutoffEnd) : new Date();
+      // Build final filedRequests with string timeIn/timeOut merged in
+        const cutoffStart = head.cutoffStart ? new Date(head.cutoffStart) : new Date();
+        const cutoffEnd   = head.cutoffEnd   ? new Date(head.cutoffEnd)   : new Date();
+
+        // a) what you already collected (could be from UI, etc.)
+        const prelisted = (filedRequests[employeeName] || []).map((f: any) => ({
+          ...f,
+          dateKey: ymdKey(f.date),
+          filedAt: f.filedAt || new Date().toISOString(),
+          // may or may not have time strings
+          timeIn: typeof f.timeIn === "string" ? f.timeIn : null,
+          timeOut: typeof f.timeOut === "string" ? f.timeOut : null,
+        }));
+
+        // b) fetch APPROVED remotework/wfh requests from /requests with times
+        const fromReqs = await fetchFiledWfhRemoteWithTimes({
+          employeeId: ln.employeeId, // HR ID "EMP007" (matches your sample)
+          cutoffStart,
+          cutoffEnd,
+        });
+
+        // c) merge by dateKey, prefer times from /requests (they're canonical)
+        const byDate = new Map<string, any>();
+        for (const r of prelisted) {
+          if (!r.dateKey) continue;
+          byDate.set(r.dateKey, { ...r });
+        }
+        for (const r of fromReqs) {
+          if (!r.dateKey) continue;
+          const existing = byDate.get(r.dateKey) || {};
+          byDate.set(r.dateKey, {
+            ...existing,
+            ...r,
+            // ensure these fields exist for downstream UIs
+            timeIn: r.timeIn ?? existing.timeIn ?? null,
+            timeOut: r.timeOut ?? existing.timeOut ?? null,
+            // keep a readable filedAt
+            filedAt: r.filedAt || existing.filedAt || null,
+          });
+        }
+
+        const mergedFiledRequests = Array.from(byDate.values()).map((x) => {
+          // strip helper key before saving
+          const { dateKey, ...rest } = x;
+          return rest;
+        });
 
       let daysOfWork = 0;
       let cur = new Date(cutoffStart);
@@ -924,10 +1016,7 @@ const [adminLoading, setAdminLoading] = useState(false);
           input,
           output: out,
           commissions: comm,
-          filedRequests: (filedRequests[employeeName] || []).map(f => ({
-        ...f,
-        filedAt: f.filedAt || new Date().toISOString(),
-      })),
+          filedRequests: mergedFiledRequests,   // <-- use merged list with timeIn/timeOut strings
         }),
       });
     }
