@@ -14,7 +14,7 @@ import {
 import { getAuth } from "firebase/auth";
 
 // ───────────────────────── Types ─────────────────────────
-type ReqType = "ob" | "ot" | "sl" | "bl" | "vl" | "remotework" | "wfh" | "rdot";
+type ReqType = "ob" | "ot" | "sl" | "bl" | "vl" | "mhl" | "remotework" | "wfh" | "rdot";
 type EmpType = "core" | "intern" | "freelancer";
 
 type MyEmployee = {
@@ -215,7 +215,7 @@ export default function RequestsPage() {
         });
       }
 
-      if (type === "sl" || type === "bl" || type === "vl") {
+      if (type === "sl" || type === "bl" || type === "vl" || type === "mhl") {
         Object.assign(base, { kind: type.toUpperCase() });
       }
 
@@ -308,6 +308,7 @@ export default function RequestsPage() {
                 <option value="sl">SL</option>
                 <option value="bl">BL</option>
                 <option value="vl">VL</option>
+                <option value="mhl">MHL</option>
                 <option value="remotework">Remote Work</option>
                 <option value="wfh">WFH</option>
                 <option value="rdot">RDOT</option>
@@ -450,7 +451,7 @@ export default function RequestsPage() {
           )}
 
           {/* SL / BL / VL */}
-          {(type === "sl" || type === "bl" || type === "vl") && (
+          {(type === "sl" || type === "bl" || type === "vl" || type === "mhl") && (
             <div className="text-sm text-gray-300">
               Leave request filed. (No proof link required.)
             </div>
