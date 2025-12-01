@@ -15,7 +15,9 @@ type ReqType =
   | "remotework"
   | "wfh"
   | "rdot"
+  | "mhl"
   | "CA";
+
 
 type RequestRow = {
   id: string;
@@ -268,7 +270,7 @@ async function rejectBudget(id: string) {
     <Empty text="No pending requests." />
   ) : (
     <>
-      {(["ob", "ot", "remotework", "wfh", "rdot", "sl", "bl", "vl"] as ReqType[]).map(
+      {(["ob", "ot", "remotework", "wfh", "rdot", "sl", "bl", "vl", "mhl"] as ReqType[]).map(
         (t) => {
           const group = reqsFiltered.filter(
             (r) => r.status === "pending" && r.type === t
@@ -444,7 +446,7 @@ async function rejectBudget(id: string) {
     <Empty text="No approved/rejected requests yet." />
   ) : (
     <>
-      {(["ob", "ot", "remotework", "wfh", "rdot", "sl", "bl", "vl"] as ReqType[]).map(
+      {(["ob", "ot", "remotework", "wfh", "rdot", "sl", "bl", "vl", "mhl"] as ReqType[]).map(
         (t) => {
           const group = reqsFiltered.filter(
             (r) => r.status !== "pending" && r.type === t
