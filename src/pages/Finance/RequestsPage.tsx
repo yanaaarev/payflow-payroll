@@ -14,7 +14,7 @@ import {
 import { getAuth } from "firebase/auth";
 
 // ───────────────────────── Types ─────────────────────────
-type ReqType = "ob" | "ot" | "sl" | "bl" | "vl" | "mhl" | "remotework" | "wfh" | "rdot";
+type ReqType = "ob" | "ot" | "sl" | "bl" | "vl" | "mhl" | "rdot";
 type EmpType = "core" | "intern" | "freelancer";
 
 type MyEmployee = {
@@ -76,7 +76,7 @@ export default function RequestsPage() {
 
   // proof required?
   const needsProof = useMemo(
-    () => type === "ot" || type === "remotework" || type === "wfh" || type === "rdot",
+    () => type === "ot" || type === "rdot" || type === "sl" || type === "bl" || type === "vl" || type === "mhl",
     [type]
   );
 
@@ -205,15 +205,6 @@ export default function RequestsPage() {
         });
       }
 
-      if (type === "remotework" || type === "wfh" || type === "rdot") {
-        Object.assign(base, {
-          ...(type === "remotework" ? { location: location || undefined } : {}),
-          timeIn,
-          timeOut,
-          hours: workedHours,
-          reason: reason || undefined,
-        });
-      }
 
       if (type === "sl" || type === "bl" || type === "vl" || type === "mhl") {
         Object.assign(base, { kind: type.toUpperCase() });
@@ -247,7 +238,7 @@ export default function RequestsPage() {
                ${type === "ob" ? `<b>Title:</b> ${obTitle}<br/>` : ""}
                ${type === "ob" ? `<b>Category:</b> ${OB_LABEL[obCategoryKey]}<br/>` : ""}
                ${type === "ot" ? `<b>OT Hours:</b> ${otHours}<br/>` : ""}
-               ${(type === "remotework" || type === "wfh" || type === "rdot") ? `<b>Hours:</b> ${workedHours}<br/>` : ""}
+               ${(type === "rdot") ? `<b>Hours:</b> ${workedHours}<br/>` : ""}
                <b>Location:</b> ${location || "—"}</p>
                <b>Proof:</b> ${proofUrl || "—"}</p>
                <b>Reason:</b> ${reason || "—"}</p>
@@ -309,8 +300,6 @@ export default function RequestsPage() {
                 <option value="bl">BL</option>
                 <option value="vl">VL</option>
                 <option value="mhl">MHL</option>
-                <option value="remotework">Remote Work</option>
-                <option value="wfh">WFH</option>
                 <option value="rdot">RDOT</option>
               </select>
             </div>
@@ -398,62 +387,57 @@ export default function RequestsPage() {
             </div>
           )}
 
-          {/* Remote / WFH / RDOT */}
-          {(type === "remotework" || type === "wfh" || type === "rdot") && (
-            <div className="space-y-4">
-              {type === "remotework" && (
-                <div>
-                  <label className="lbl">Location</label>
-                  <input
-                    value={location}
-                    onChange={(e) => setLocation(e.target.value)}
-                    className="inp"
-                    required
-                  />
-                </div>
-              )}
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div>
-                  <label className="lbl">Time In</label>
-                  <input
-                    type="time"
-                    value={timeIn}
-                    onChange={(e) => setTimeIn(e.target.value)}
-                    className="inp"
-                    required
-                  />
-                </div>
-                <div>
-                  <label className="lbl">Time Out</label>
-                  <input
-                    type="time"
-                    value={timeOut}
-                    onChange={(e) => setTimeOut(e.target.value)}
-                    className="inp"
-                    required
-                  />
-                </div>
-                <div>
-                  <label className="lbl">Computed Hours</label>
-                  <input className="inp" value={workedHours || ""} readOnly placeholder="0" />
-                </div>
+          {/* RDOT */}
+        {type === "rdot" && (
+          <div className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div>
+                <label className="lbl">Time In</label>
+                <input
+                  type="time"
+                  value={timeIn}
+                  onChange={(e) => setTimeIn(e.target.value)}
+                  className="inp"
+                  required
+                />
               </div>
               <div>
-                <label className="lbl">Reason</label>
-                <textarea
-                  rows={3}
-                  value={reason}
-                  onChange={(e) => setReason(e.target.value)}
+                <label className="lbl">Time Out</label>
+                <input
+                  type="time"
+                  value={timeOut}
+                  onChange={(e) => setTimeOut(e.target.value)}
                   className="inp"
+                  required
+                />
+              </div>
+              <div>
+                <label className="lbl">Computed Hours</label>
+                <input
+                  className="inp"
+                  value={workedHours || ""}
+                  readOnly
+                  placeholder="0"
                 />
               </div>
             </div>
-          )}
+            <div>
+              <label className="lbl">Reason</label>
+              <textarea
+                rows={3}
+                value={reason}
+                onChange={(e) => setReason(e.target.value)}
+                className="inp"
+              />
+            </div>
+          </div>
+        )}
+
 
           {/* SL / BL / VL */}
           {(type === "sl" || type === "bl" || type === "vl" || type === "mhl") && (
-            <div className="text-sm text-gray-300">
-              Leave request filed. (No proof link required.)
+            <div className="text-sm py-3 text-gray-300">
+              Please ensure you have prior approval from HR before filing sick, birthday, vacation, or mental health leave requests.
             </div>
           )}
 

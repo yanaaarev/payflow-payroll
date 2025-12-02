@@ -29,20 +29,6 @@ type RequestRow = {
   details?: Record<string, any>;
 };
 
-type BudgetRow = {
-  id: string;
-  requesterName?: string;
-  title?: string;
-  kind?: string;
-  amount?: number;
-  status?: "pending" | "approved" | "rejected";
-  filedAt?: string;
-  dateRequested?: string;
-  dateNeeded?: string;
-  requesterEmail?: string;
-  rejection?: Record<string, any>;
-};
-
 type PayrollDraft = {
   id: string;
   status: "pending_exec" | "pending_admin" | "approved" | "rejected";
@@ -53,30 +39,62 @@ type PayrollDraft = {
 
 /* ========================= Component ========================= */
 export default function ApprovalsPage() {
-const auth = getAuth();
-const user = auth.currentUser;
-const [roles, setRoles] = useState<string[]>([]);
+  const auth = getAuth();
+  const user = auth.currentUser;
+  const [roles, setRoles] = useState<string[]>([]);
 
-useEffect(() => {
-  if (!user) return;
-  user.getIdTokenResult().then((token) => {
-    setRoles(((token.claims.roles as string[]) || []).map(String));
-  });
-}, [user]);
+  useEffect(() => {
+    if (!user) return;
+    user.getIdTokenResult().then((token) => {
+      setRoles(((token.claims.roles as string[]) || []).map(String));
+    });
+  }, [user]);
 
-const canApproveBudget = roles.includes("admin_final") || roles.includes("finance");
-const canApproveRequest = canApproveBudget || roles.includes("exec");
+  const canApproveBudget = roles.includes("admin_final") || roles.includes("finance");
+  const canApproveRequest = canApproveBudget || roles.includes("exec");
 
   const navigate = useNavigate();
 
-  const [tab, setTab] = useState<"approvals" | "history">("approvals");
-  const [q, setQ] = useState("");
-  const [loading, setLoading] = useState(true);
+  const [tab, setTab] = useState<"approvals" | "history">(
+    () =>
+      (sessionStorage.getItem("approvals_tab") as "approvals" | "history") ||
+      "approvals"
+  );
 
+  const [q, setQ] = useState<string>(
+    () => sessionStorage.getItem("approvals_search") || ""
+  );
+  const [loading, setLoading] = useState(true);
   const [requests, setRequests] = useState<RequestRow[]>([]);
-  const [budgets, setBudgets] = useState<BudgetRow[]>([]);
   const [drafts, setDrafts] = useState<PayrollDraft[]>([]);
   const [processingIds, setProcessingIds] = useState<Set<string>>(new Set());
+
+  // persist tab & search across navigations
+  useEffect(() => {
+    sessionStorage.setItem("approvals_tab", tab);
+  }, [tab]);
+
+  useEffect(() => {
+    sessionStorage.setItem("approvals_search", q);
+  }, [q]);
+
+  // restore scroll position after coming back from view page
+  useEffect(() => {
+    if (!loading) {
+      const saved = sessionStorage.getItem("approvals_scroll");
+      if (saved) {
+        window.scrollTo(0, Number(saved));
+      }
+    }
+  }, [loading]);
+
+  function openRequest(id: string) {
+    // save scroll, tab, and search before navigating
+    sessionStorage.setItem("approvals_scroll", String(window.scrollY));
+    sessionStorage.setItem("approvals_tab", tab);
+    sessionStorage.setItem("approvals_search", q);
+    navigate(`/approvals/view-request/${id}`);
+  }
 
   /* ---------- Load Data ---------- */
   useEffect(() => {
@@ -84,18 +102,24 @@ const canApproveRequest = canApproveBudget || roles.includes("exec");
       setLoading(true);
       try {
         const reqSnap = await getDocs(collection(db, "requests"));
-        setRequests(reqSnap.docs.map((d) => ({ id: d.id, ...d.data() } as RequestRow)));
-
-        const budSnap = await getDocs(collection(db, "budgets"));
-        setBudgets(budSnap.docs.map((d) => ({ id: d.id, ...d.data() } as BudgetRow)));
+        setRequests(
+          reqSnap.docs.map((d) => ({ id: d.id, ...d.data() } as RequestRow))
+        );
 
         const pdSnap = await getDocs(
           query(
             collection(db, "payrollDrafts"),
-            where("status", "in", ["pending_exec", "pending_admin", "approved", "rejected"])
+            where("status", "in", [
+              "pending_exec",
+              "pending_admin",
+              "approved",
+              "rejected",
+            ])
           )
         );
-        setDrafts(pdSnap.docs.map((d) => ({ id: d.id, ...d.data() } as PayrollDraft)));
+        setDrafts(
+          pdSnap.docs.map((d) => ({ id: d.id, ...d.data() } as PayrollDraft))
+        );
       } catch (err) {
         console.error("Failed to fetch approvals", err);
       } finally {
@@ -119,15 +143,7 @@ const canApproveRequest = canApproveBudget || roles.includes("exec");
     [requests, ql]
   );
 
-  const budsFiltered = useMemo(
-    () =>
-      budgets.filter((b) =>
-        !ql
-          ? true
-          : Object.values(b).some((val) => filterText(val))
-      ),
-    [budgets, ql]
-  );
+  
 
   const draftsFiltered = useMemo(
     () =>
@@ -181,47 +197,6 @@ async function rejectRequest(id: string) {
   }
 }
 
-async function approveBudget(id: string) {
-  if (processingIds.has(id)) return;
-  setProcessingIds((prev) => new Set(prev).add(id));
-  await updateDoc(doc(db, "budgets", id), { status: "approved" });
-
-  setBudgets((prev) => prev.filter((b) => b.id !== id));
-
-  const b = budgets.find((x) => x.id === id);
-  if (b?.requesterEmail) {
-    await fetch("/api/sendEmail", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        to: b.requesterEmail,
-        subject: "✅ Budget Approved",
-        html: `<p>Hi ${b.requesterName}, your budget "<b>${b.title}</b>" has been approved.</p>`,
-      }),
-    });
-  }
-}
-
-async function rejectBudget(id: string) {
-  if (processingIds.has(id)) return;
-  setProcessingIds((prev) => new Set(prev).add(id));
-  await updateDoc(doc(db, "budgets", id), { status: "rejected" });
-
-  setBudgets((prev) => prev.filter((b) => b.id !== id));
-
-  const b = budgets.find((x) => x.id === id);
-  if (b?.requesterEmail) {
-    await fetch("/api/sendEmail", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        to: b.requesterEmail,
-        subject: "❌ Budget Rejected",
-        html: `<p>Hi ${b.requesterName}, your budget "<b>${b.title}</b>" has been rejected.</p>`,
-      }),
-    });
-  }
-}
 
   /* ---------- UI ---------- */
   return (
@@ -287,39 +262,44 @@ async function rejectBudget(id: string) {
                   title={r.employeeName}
                   status={r.status}
                   right={
-                    <div className="flex gap-2">
-                      <button
-                        onClick={() => navigate(`/approvals/view-request/${r.id}`)}
-                        className="px-3 py-1 text-xs rounded bg-blue-600 hover:bg-blue-500"
-                      >
-                        View
-                      </button>
-                      {canApproveRequest && (
-                        <>
-                          <button
-                            disabled={processingIds.has(r.id)}
-                            onClick={() => approveRequest(r.id)}
-                            className={`px-3 py-1 text-xs rounded ${
-                              processingIds.has(r.id)
-                                ? "bg-green-800 opacity-50 cursor-not-allowed"
-                                : "bg-green-600 hover:bg-green-500"
-                            }`}
-                          >
-                            Approve
-                          </button>
-                          <button
-                            disabled={processingIds.has(r.id)}
-                            onClick={() => rejectRequest(r.id)}
-                            className={`px-3 py-1 text-xs rounded ${
-                              processingIds.has(r.id)
-                                ? "bg-red-800 opacity-50 cursor-not-allowed"
-                                : "bg-red-600 hover:bg-red-500"
-                            }`}
-                          >
-                            Reject
-                          </button>
-                        </>
-                      )}
+                    <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-3">
+                      <span className="text-[11px] text-gray-400">
+                        {r.details?.date ? `Date: ${r.details.date}` : ""}
+                      </span>
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => openRequest(r.id)}
+                          className="px-3 py-1 text-xs rounded bg-blue-600 hover:bg-blue-500"
+                        >
+                          View
+                        </button>
+                        {canApproveRequest && (
+                          <>
+                            <button
+                              disabled={processingIds.has(r.id)}
+                              onClick={() => approveRequest(r.id)}
+                              className={`px-3 py-1 text-xs rounded ${
+                                processingIds.has(r.id)
+                                  ? "bg-green-800 opacity-50 cursor-not-allowed"
+                                  : "bg-green-600 hover:bg-green-500"
+                              }`}
+                            >
+                              Approve
+                            </button>
+                            <button
+                              disabled={processingIds.has(r.id)}
+                              onClick={() => rejectRequest(r.id)}
+                              className={`px-3 py-1 text-xs rounded ${
+                                processingIds.has(r.id)
+                                  ? "bg-red-800 opacity-50 cursor-not-allowed"
+                                  : "bg-red-600 hover:bg-red-500"
+                              }`}
+                            >
+                              Reject
+                            </button>
+                          </>
+                        )}
+                      </div>
                     </div>
                   }
                 />
@@ -332,68 +312,6 @@ async function rejectBudget(id: string) {
   )}
 </CardPanel>
 
-    {/* Budgets */}
-    <CardPanel
-      title={`Budgets (${budsFiltered.filter((b) => b.status === "pending").length})`}
-      loading={loading}
-    >
-      {budsFiltered.filter((b) => b.status === "pending").length === 0 ? (
-        <Empty text="No pending budgets." />
-      ) : (
-        groupByDate(budsFiltered.filter((b) => b.status === "pending")).map(
-          ([date, items]) => (
-            <div key={date}>
-              <div className="px-6 py-2 bg-gray-700/50 text-sm font-medium text-gray-300">
-                {date}
-              </div>
-              {items.map((b) => (
-               <DetailsView
-              key={b.id}
-              title={b.title}
-              status={b.status}
-              right={
-                <div className="flex gap-2">
-                  <button
-                    onClick={() => navigate(`/approvals/view-budget/${b.id}`)}
-                    className="px-3 py-1 text-xs rounded bg-blue-600 hover:bg-blue-500"
-                  >
-                    View
-                  </button>
-                  {canApproveBudget && (
-                    <>
-                      <button
-                            disabled={processingIds.has(b.id)}
-                            onClick={() => approveBudget(b.id)}
-                            className={`px-3 py-1 text-xs rounded ${
-                              processingIds.has(b.id)
-                                ? "bg-green-800 opacity-50 cursor-not-allowed"
-                                : "bg-green-600 hover:bg-green-500"
-                            }`}
-                          >
-                            Approve
-                          </button>
-                          <button
-                            disabled={processingIds.has(b.id)}
-                            onClick={() => rejectBudget(b.id)}
-                            className={`px-3 py-1 text-xs rounded ${
-                              processingIds.has(b.id)
-                                ? "bg-red-800 opacity-50 cursor-not-allowed"
-                                : "bg-red-600 hover:bg-red-500"
-                            }`}
-                          >
-                            Reject
-                          </button>
-                    </>
-                  )}
-                </div>
-              }
-            />
-              ))}
-            </div>
-          )
-        )
-      )}
-    </CardPanel>
 
     {/* Payroll Drafts */}
     <CardPanel
@@ -469,13 +387,18 @@ async function rejectBudget(id: string) {
                       title={r.employeeName}
                       status={r.status}
                       right={
+                      <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-3">
+                        <span className="text-[11px] text-gray-400">
+                          {r.details?.date ? `Date: ${r.details.date}` : ""}
+                        </span>
                         <button
-                          onClick={() => navigate(`/approvals/view-request/${r.id}`)}
+                          onClick={() => openRequest(r.id)}
                           className="px-3 py-1 text-xs rounded bg-blue-600 hover:bg-blue-500"
                         >
                           View
                         </button>
-                      }
+                      </div>
+                    }
                     />
                   ))}
                 </div>
@@ -487,38 +410,6 @@ async function rejectBudget(id: string) {
     </>
   )}
 </CardPanel>
-
-    {/* Budgets History */}
-    <CardPanel title="Budgets History" loading={loading}>
-      {budsFiltered.filter((b) => b.status !== "pending").length === 0 ? (
-        <Empty text="No approved/rejected budgets yet." />
-      ) : (
-        groupByDate(budsFiltered.filter((b) => b.status !== "pending")).map(
-          ([date, items]) => (
-            <div key={date}>
-              <div className="px-6 py-2 bg-gray-700/50 text-sm font-medium text-gray-300">
-                {date}
-              </div>
-              {items.map((b) => (
-                <DetailsView
-                  key={b.id}
-                  title={b.title}
-                  status={b.status}
-                  right={
-                    <button
-                      onClick={() => navigate(`/approvals/view-budget/${b.id}`)}
-                      className="px-3 py-1 text-xs rounded bg-blue-600 hover:bg-blue-500"
-                    >
-                      View
-                    </button>
-                  }
-                />
-              ))}
-            </div>
-          )
-        )
-      )}
-    </CardPanel>
 
     {/* Payroll History */}
     <CardPanel title="Payroll Drafts History" loading={loading}>

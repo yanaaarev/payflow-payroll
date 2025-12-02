@@ -7,7 +7,6 @@ import {
   HiOutlineUsers,
   HiOutlineClipboardList,
   HiOutlineFolder,
-  HiOutlineCurrencyDollar,
   HiOutlineDocumentText,
 } from "react-icons/hi";
 import { GoHomeFill } from "react-icons/go";
@@ -105,7 +104,6 @@ const Sidebar: React.FC = () => {
         { label: "All Payslips", href: "/all-payslips", icon: <HiOutlineDocumentText size={20} /> },
         { label: "My Payslips", href: "/employee/payslips", icon: <HiOutlineDocumentText size={20} /> },
         { label: "Approvals", href: "/approvals", icon: <HiOutlineUsers size={20} /> },
-        { label: "Budgets", href: "/finance/budgets", icon: <HiOutlineCurrencyDollar size={20} /> },
         { label: "Reports", href: "/finance/reports", icon: <HiOutlineDocumentText size={20} /> },
         { label: "Audit Logs", href: "/finance/audit-logs", icon: <HiOutlineFolder size={20} /> },
       ];
@@ -135,8 +133,6 @@ const Sidebar: React.FC = () => {
         { label: "Attendance", href: "/finance/attendance", icon: <HiOutlineClipboardList size={20} /> },
         { label: "Requests", href: "/finance/requests", icon: <MdOutlineRequestQuote size={20} /> },
         { label: "Payroll", href: "/finance/payroll", icon: <HiOutlineDocumentText size={20} /> },
-        { label: "Cash Advances", href: "/finance/cash-advances", icon: <HiOutlineCurrencyDollar size={20} /> },
-        { label: "Budgets", href: "/finance/budgets", icon: <HiOutlineCurrencyDollar size={20} /> },
         { label: "Reports", href: "/finance/reports", icon: <HiOutlineDocumentText size={20} /> },
         { label: "Audit Logs", href: "/finance/audit-logs", icon: <HiOutlineFolder size={20} /> },
         { label: "Settings", href: "/finance/settings", icon: <CiSettings size={20} /> },
@@ -151,7 +147,6 @@ const Sidebar: React.FC = () => {
         { label: "My Payslips", href: "/employee/payslips", icon: <HiOutlineDocumentText size={20} /> },
         { label: "Profile", href: "/profile", icon: <HiOutlineUsers size={20} /> },
         { label: "Requests", href: "/finance/requests", icon: <MdOutlineRequestQuote size={20} /> },
-        { label: "Budgets", href: "/finance/budgets", icon: <HiOutlineCurrencyDollar size={20} /> },
         { label: "Reports", href: "/finance/reports", icon: <HiOutlineDocumentText size={20} /> },
       ];
     }
@@ -160,7 +155,6 @@ const Sidebar: React.FC = () => {
       HOME,
       { label: "My Payslips", href: "/employee/payslips", icon: <HiOutlineDocumentText size={20} /> },
       { label: "File Requests", href: "/finance/requests", icon: <MdOutlineRequestQuote size={20} /> },
-      { label: "Budgets", href: "/finance/budgets", icon: <HiOutlineCurrencyDollar size={20} /> },
       { label: "Profile", href: "/profile", icon: <HiOutlineUsers size={20} /> },
     ];
   }, [pageRoles, getHomeRoute]);
